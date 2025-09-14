@@ -1,8 +1,15 @@
-import React from 'react';
+import React from 'react'; // frontend/src/index.js
 import ReactDOM from 'react-dom/client';
+import 'bootstrap/dist/css/bootstrap.min.css'; // importa el CSS de Bootstrap
+import 'bootstrap/dist/js/bootstrap.bundle.min.js'; //(opcional) JS de Bootstrap para toggles/collapse del navbar
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import './index.css'; // para estilos propios
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

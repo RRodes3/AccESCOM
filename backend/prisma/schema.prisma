@@ -1,0 +1,81 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+
+  // Relaciona con QRPass (dueño de los pases)
+  qrPasses QRPass[]
+
+  // Relaciona con AccessLog como "usuario dueño" del evento
+  accessLogs AccessLog[] @relation("AccessByUser")
+
+  // Relaciona con AccessLog como "guardia validador"
+  guardLogs AccessLog[] @relation("ValidatedByGuard")
+
+  @@index([email])
+}
+
+enum Role {
+  ADMIN
+  USER
+  GUARD
+}
+
+model QRPass {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique // token del QR
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id])
+  status    QRStatus  @default(ACTIVE)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  // Back-relation hacia AccessLog.qr
+  logs AccessLog[]
+
+  @@index([code])
+}
+
+enum QRStatus {
+  ACTIVE
+  USED
+  REVOKED
+  EXPIRED
+}
+
+model AccessLog {
+  id Int @id @default(autoincrement())
+
+  // Relación con el usuario dueño (quien emite / a quien pertenece el pase)
+  userId Int
+  user   User @relation("AccessByUser", fields: [userId], references: [id])
+
+  // Relación con el QR involucrado (opcional)
+  qrId Int?
+  qr   QRPass? @relation(fields: [qrId], references: [id])
+
+  // Quién validó (guardia). Es opcional porque hay eventos ISSUE sin guardia.
+  guardId Int?
+  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
+
+  action    AccessType
+  createdAt DateTime   @default(now())
+}
+
+enum AccessType {
+  ISSUE
+  VALIDATE_ALLOW
+  VALIDATE_DENY
+}

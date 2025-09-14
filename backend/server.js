@@ -1,20 +1,40 @@
 // backend/server.js
-const express = require("express");
-const cors = require("cors");
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+
+const authRoutes = require('./src/routers/auth'); // OJO: tu carpeta es "routers"
 
 const app = express();
-const PORT = 3000;
 
-// Middleware
-app.use(cors());
+// Middlewares base
 app.use(express.json());
+app.use(cookieParser());
+app.use(
+  cors({
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:3001').split(','), // tu front corre en 3001
+    credentials: true,
+  })
+);
 
-// Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("Servidor funcionando correctamente 🚀");
-});
+// Healthcheck bajo /api
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-// Arrancar el servidor
+// Rutas de autenticación bajo /api/auth
+app.use('/api/auth', authRoutes);
+
+// Rutas de QR bajo /api/qr
+const qrRoutes = require('./src/routers/qr');
+app.use('/api/qr', qrRoutes);
+
+
+// (Opcional) raíz simple
+app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));
+
+// Arranque
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`API running on http://localhost:${PORT}`);
 });
