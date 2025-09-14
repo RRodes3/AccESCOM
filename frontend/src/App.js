@@ -5,8 +5,10 @@ import DashboardSwitch from './pages/DashboardSwitch';
 import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import GenerateQR from './pages/GenerateQR';
-import GuardScan from './pages/GuardScan';
+//import GuardScan from './pages/GuardScan';
 import AccessReport from './pages/AccessReport';
+import { Suspense, lazy } from 'react';
+const GuardScan = lazy(() => import('./pages/GuardScan'));
 
 function App() {
   return (
@@ -52,9 +54,20 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/guard-scan"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<div className="container mt-3">Cargando lector…</div>}>
+                  <GuardScan />
+                </Suspense>
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </div>
     </Router>
+    
   );
 }
 
