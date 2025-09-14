@@ -13,19 +13,15 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(USER)
+  boleta    String?          // ← NUEVO (opcional)
   createdAt DateTime @default(now())
 
-  // Relaciona con QRPass (dueño de los pases)
-  qrPasses QRPass[]
-
-  // Relaciona con AccessLog como "usuario dueño" del evento
-  accessLogs AccessLog[] @relation("AccessByUser")
-
-  // Relaciona con AccessLog como "guardia validador"
-  guardLogs AccessLog[] @relation("ValidatedByGuard")
+  qrPasses  QRPass[]
+  logs      AccessLog[]
 
   @@index([email])
 }
+
 
 enum Role {
   ADMIN

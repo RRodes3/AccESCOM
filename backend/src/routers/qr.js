@@ -82,7 +82,7 @@ router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) 
 
     const owner = await prisma.user.findUnique({
       where: { id: pass.userId },
-      select: { id: true, name: true, email: true }
+      select: { id: true, name: true, email: true, role: true, boleta: true }
     });
     res.json({ ok: true, owner, pass: { status: 'USED' } });
   } catch (e) {
