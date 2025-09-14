@@ -34,7 +34,7 @@ app.use('/api/qr', qrRoutes);
 app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));
 
 // Arranque
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });
