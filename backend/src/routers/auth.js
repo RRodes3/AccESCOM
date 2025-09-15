@@ -10,19 +10,16 @@ const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i; // email tipo "iniciales.apellido" o "rrodasr1800" + @ipn.mx/@alumno.ipn.mx
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
 
-function isInstitutional(email) {
-  const e = (email || '').trim();
-  return RE_EMAIL_DOT.test(e) || RE_EMAIL_COMPACT.test(e);
-}
+const isInstitutional = (email) =>
+  RE_EMAIL_DOT.test((email||'').trim()) || RE_EMAIL_COMPACT.test((email||'').trim());
 
-function sanitizeName(s) {
-  return String(s || '').trim().replace(/\s{2,}/g, ' ').slice(0, 80);
-}
+const sanitizeName = (s) =>
+  String(s || '').trim().replace(/\s{2,}/g, ' ').slice(0, 80);
 
-function buildFullName(firstName, lastNameP, lastNameM) {
+const buildFullName = (firstName, lastNameP, lastNameM) => {
   const parts = [firstName, lastNameP, lastNameM].map(sanitizeName).filter(Boolean);
   return (parts.join(' ') || 'Usuario').slice(0, 120);
-}
+};
 
 
 const prisma = new PrismaClient();
@@ -93,13 +90,45 @@ router.post('/register', async (req, res) => {
 });
 
 
-/* ---------- LOGIN ---------- */
+// ====== LOGIN con Super Admin ======
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Faltan credenciales' });
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const superEmail = (process.env.SUPER_ADMIN_EMAIL || '').toLowerCase();
+    const superPass  = String(process.env.SUPER_ADMIN_PASSWORD || '');
+
+    if (superEmail && email.toLowerCase() === superEmail) {
+      // compara contra el .env
+      if (password !== superPass) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+      // upsert del super admin en BD para tener id/relaciones
+      const superUser = await prisma.user.upsert({
+        where: { email: superEmail },
+        update: { role: 'ADMIN' },
+        create: {
+          boleta: '0000000000',
+          firstName: 'Super',
+          lastNameP: 'Admin',
+          lastNameM: 'IPN',
+          name: 'Super Admin',
+          email: superEmail,
+          password: await bcrypt.hash(superPass, 10),
+          role: 'ADMIN'
+        },
+        select: { id:true, name:true, email:true, role:true, boleta:true }
+      });
+
+      const payload = { id: superUser.id, role: superUser.role, email: superUser.email, name: superUser.name };
+      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
+      const body = { user: payload };
+      if (process.env.NODE_ENV !== 'production') body.token = token;
+      return res.cookie('token', token, cookieOptions).json(body);
+    }
+
+    // flujo normal (no super admin)
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const ok = await bcrypt.compare(password, user.password);
@@ -107,16 +136,15 @@ router.post('/login', async (req, res) => {
 
     const payload = { id: user.id, role: user.role, email: user.email, name: user.name };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
-
     const body = { user: payload };
     if (process.env.NODE_ENV !== 'production') body.token = token;
-
-    res.cookie('token', token, cookieOptions).json(body);
+    return res.cookie('token', token, cookieOptions).json(body);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error en login' });
   }
 });
+
 
 /* ---------- LOGOUT ---------- */
 router.post('/logout', (req, res) => {

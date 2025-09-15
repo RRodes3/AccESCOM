@@ -28,9 +28,16 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Rutas
 app.use('/api/auth', require('./src/routers/auth'));
+app.use('/api/admin', require('./src/routers/adminUsers')); // ← añade esto
+app.use('/api/qr', require('./src/routers/qr'));
 
 // Arrancar
 const PORT = process.env.PORT || 3000; // mantengo 3000 según tu setup
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });
+
+
+
+
+

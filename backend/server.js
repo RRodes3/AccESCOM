@@ -19,6 +19,9 @@ app.use(
   })
 );
 
+// Rutas de administración bajo /api/admin
+app.use('/api/admin', require('./src/routers/adminUsers'));
+
 // Healthcheck bajo /api
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

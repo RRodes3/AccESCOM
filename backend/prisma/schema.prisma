@@ -9,22 +9,25 @@ generator client {
 
 model User {
   id        Int      @id @default(autoincrement())
-  boleta    String   @unique              // ← obligatoria y única
+  boleta    String   @unique
   name      String
-  firstName String                         // ← obligatoria
-  lastNameP String                         // ← obligatoria
-  lastNameM String                         // ← obligatoria
+  firstName String
+  lastNameP String
+  lastNameM String
   email     String   @unique
   password  String
   role      Role     @default(USER)
   createdAt DateTime @default(now())
 
-  qrPasses   QRPass[]
+  // Soft delete
+  isActive  Boolean  @default(true)
+  deletedAt DateTime?
 
-  // Relaciones con nombres explícitos para los dos lados hacia AccessLog
-  accessLogs AccessLog[] @relation("AccessByUser")       // dueño del QR (quien entra)
-  guardLogs  AccessLog[] @relation("ValidatedByGuard")   // quien valida (guardia)
+  qrPasses   QRPass[]
+  accessLogs AccessLog[] @relation("AccessByUser")
+  guardLogs  AccessLog[] @relation("ValidatedByGuard")
 }
+
 
 enum Role {
   ADMIN

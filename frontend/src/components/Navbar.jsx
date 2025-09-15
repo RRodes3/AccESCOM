@@ -41,10 +41,16 @@ export default function Navbar() {
               </li>
             )}
 
+            //Navbar – link solo para ADMIN
             {user?.role === 'ADMIN' && (
-              <li className="nav-item">
-                <Link className="nav-link" to="/access-report">Reporte</Link>
-              </li>
+              <>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/admin/users">Usuarios</Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/access-report">Reporte</Link>
+                </li>
+              </>
             )}
           </ul>
 

@@ -10,6 +10,7 @@ import AccessReport from './pages/AccessReport';
 import { Suspense, lazy } from 'react';
 const GuardScan = lazy(() => import('./pages/GuardScan'));
 import Register from './pages/Register';
+import AdminUsers from './pages/AdminUsers';
 
 
 function App() {
@@ -21,6 +22,18 @@ function App() {
           <Route path="/" element={<Home />} /> //pagina principal
           <Route path="/register" element={<Register />} /> //registro usuario
           <Route path="/login" element={<Login />} /> //login usuario
+
+    // Rutas protegidas
+
+          //Ruta protegida solo para ADMIN
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute roles={['ADMIN']}>
+                <AdminUsers />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/dashboard"
