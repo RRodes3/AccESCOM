@@ -36,3 +36,11 @@
     transform: rotate(360deg);
   }
 }
+
+.flash-banner { animation: flashPop 500ms ease-out; }
+@keyframes flashPop {
+  0% { transform: scale(0.98); filter: brightness(0.95); }
+  60%{ transform: scale(1.02); filter: brightness(1.05); }
+  100%{ transform: scale(1); filter:none; }
+}
+

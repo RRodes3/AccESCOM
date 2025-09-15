@@ -1,26 +1,70 @@
+// backend/prisma/seed.js
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
-async function createUser(name, email, password, role) {
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (!exists) {
-    const hash = await bcrypt.hash(password, 10);
-    await prisma.user.create({
-      data: { name, email, password: hash, role }
-    });
-    console.log(`✅ Usuario creado: ${email} (rol: ${role}, pass: ${password})`);
-  } else {
-    console.log(`ℹ️ Usuario ya existe: ${email}`);
-  }
-}
+const strong = (plain) => bcrypt.hash(plain, 10);
 
 async function main() {
-  await createUser('Admin', 'admin@demo.com', '123456', 'ADMIN');
-  await createUser('Usuario Normal', 'user@demo.com', '123456', 'USER');
-  await createUser('Guardia', 'guard@demo.com', '123456', 'GUARD');
+  // Contraseñas que cumplen tu regla (≥12 chars, mayúsc, minúsc, número, símbolo)
+  const P_ADMIN = 'Admin#2025_secure';
+  const P_GUARD = 'Guard#2025_secure';
+  const P_USER  = 'User#2025_secure!';
+
+  const users = [
+    {
+      boleta: '2025000001',
+      firstName: 'Admin',
+      lastNameP: 'ESCOM',
+      lastNameM: 'IPN',
+      name: 'Admin ESCOM IPN',
+      email: 'admin@demo.com',
+      password: await strong(P_ADMIN),
+      role: 'ADMIN',
+    },
+    {
+      boleta: '2025000002',
+      firstName: 'Guardia',
+      lastNameP: 'ESCOM',
+      lastNameM: 'IPN',
+      name: 'Guardia ESCOM IPN',
+      email: 'guard@demo.com',
+      password: await strong(P_GUARD),
+      role: 'GUARD',
+    },
+    {
+      boleta: '2025000003',
+      firstName: 'Alumno',
+      lastNameP: 'Demo',
+      lastNameM: 'ESCOM',
+      name: 'Alumno Demo ESCOM',
+      email: 'user@demo.com',
+      password: await strong(P_USER),
+      role: 'USER',
+    },
+  ];
+
+  // upsert por email (evita duplicados si corres el seed otra vez)
+  for (const u of users) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {},
+      create: u,
+    });
+  }
+
+  console.log('\n✓ Seed listo.');
+  console.log('Credenciales de prueba:');
+  console.log(`  ADMIN: ${users[0].email} / ${P_ADMIN}`);
+  console.log(`  GUARD: ${users[1].email} / ${P_GUARD}`);
+  console.log(`  USER : ${users[2].email} / ${P_USER}\n`);
 }
 
 main()
-  .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

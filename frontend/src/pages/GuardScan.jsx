@@ -25,26 +25,27 @@ function playFeedback(ok) {
 /** Tarjeta de resultado (autorizado/denegado) */
 function ScanResultCard({ ok, owner, reason, onScanAgain, onBack }) {
   const approved = ok === true;
+  const roleLabel = { ADMIN: 'Administrador', USER: 'Alumno', GUARD: 'Guardia' };
 
   return (
     <div className="container mt-4" style={{ maxWidth: 420 }}>
-      <div
-        className={`rounded-3 text-white text-center fw-bold py-2 ${
-          approved ? 'bg-success' : 'bg-danger'
-        }`}
-      >
+      <div className={`rounded-3 text-white text-center fw-bold py-2 ${approved ? 'bg-success' : 'bg-danger'}`}>
         {approved ? 'Acceso Autorizado' : 'Acceso Denegado'}
       </div>
 
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
         {approved ? (
           <>
-            <p className="mb-1"><b>Usuario:</b> {owner?.role || '—'}</p>
-            <p className="mb-1"><b>Nombre:</b> {owner?.name || '—'}</p>
+            <p className="mb-1"><b>Usuario:</b> {roleLabel[owner?.role] || owner?.role || '—'}</p>
+            <p className="mb-1">
+              <b>Nombre:</b>{' '}
+              {[owner?.firstName, owner?.lastNameP, owner?.lastNameM].filter(Boolean).join(' ')
+               || owner?.name || '—'}
+            </p>
+            <p className="mb-1"><b>No. boleta:</b> {owner?.boleta || '—'}</p>
             <p className="mb-1"><b>Email:</b> {owner?.email || '—'}</p>
 
             <div className="d-flex justify-content-center mt-3">
-              {/* Avatar simple; sustituye por foto real si la tienes */}
               <div
                 style={{
                   width: 160, height: 160, borderRadius: '50%',
@@ -53,27 +54,26 @@ function ScanResultCard({ ok, owner, reason, onScanAgain, onBack }) {
                   color: '#333', fontWeight: 'bold'
                 }}
               >
-                {owner?.name?.[0]?.toUpperCase() || 'U'}
+                {(owner?.firstName?.[0] || owner?.name?.[0] || 'U').toUpperCase()}
               </div>
             </div>
           </>
         ) : (
           <div style={{ whiteSpace: 'pre-line' }}>
             <p className="mb-0">
-              {reason
-                ? `Motivo: ${reason}`
-                : 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.'}
+              {reason || 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.'}
             </p>
             <p className="mt-3 mb-0">Última opción: registro manual.</p>
           </div>
         )}
       </div>
 
+      {/* Botones */}
       <div className="d-grid gap-2 mt-4">
-        <button className="btn btn-primary btn-lg" onClick={onScanAgain}>
+        <button type="button" className="btn btn-primary btn-lg" onClick={onScanAgain}>
           Escanear nuevo código QR
         </button>
-        <button className="btn btn-outline-primary" onClick={onBack}>
+        <button type="button" className="btn btn-outline-primary" onClick={onBack}>
           Regresar al menú
         </button>
       </div>
@@ -81,6 +81,8 @@ function ScanResultCard({ ok, owner, reason, onScanAgain, onBack }) {
   );
 }
 
+
+/** Página de escaneo de QR (guardia) */
 export default function GuardScan() {
   const regionId = 'reader';
   const scannerRef   = useRef(null);    // instancia Html5Qrcode

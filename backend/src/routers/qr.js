@@ -1,4 +1,3 @@
-// backend/src/routers/qr.js
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
@@ -13,12 +12,12 @@ const prisma = new PrismaClient();
  */
 router.post('/issue', auth, requireRole(['USER','ADMIN']), async (req, res) => {
   try {
-    // ----- Mini hardening: TTL mínimo/máximo -----
-    const ttl = Math.max(1, Math.min(Number(req.body?.ttlMinutes || 30), 1440)); // 1min..24h
-    const code = crypto.randomBytes(16).toString('hex'); // 32 chars
+    // TTL entre 1 minuto y 24 horas
+    const ttl = Math.max(1, Math.min(Number(req.body?.ttlMinutes || 30), 1440));
+    const code = crypto.randomBytes(16).toString('hex'); // 32 chars hex
     const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
 
-    // (Opcional) Revocar QR activos previos del mismo usuario
+    // Revocar cualquier QR ACTIVO previo del mismo usuario (una sola operación)
     await prisma.qRPass.updateMany({
       where: { userId: req.user.id, status: 'ACTIVE' },
       data: { status: 'REVOKED' }
@@ -47,8 +46,8 @@ router.post('/issue', auth, requireRole(['USER','ADMIN']), async (req, res) => {
 router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) => {
   try {
     const { code } = req.body || {};
-    // ----- Mini hardening: validar "code" -----
-    if (typeof code !== 'string' || code.length < 16) {
+    // Validar formato: 32 hex
+    if (typeof code !== 'string' || !/^[0-9a-f]{32}$/i.test(code)) {
       return res.status(400).json({ ok: false, reason: 'code inválido' });
     }
 
@@ -74,7 +73,7 @@ router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) 
       return res.status(400).json({ ok: false, reason: `QR ${pass.status}` });
     }
 
-    // Marcar como usado (idempotencia simple)
+    // Marcar como usado
     await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'USED' } });
     await prisma.accessLog.create({
       data: { userId: pass.userId, qrId: pass.id, action: 'VALIDATE_ALLOW', guardId: req.user.id }
@@ -82,8 +81,12 @@ router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) 
 
     const owner = await prisma.user.findUnique({
       where: { id: pass.userId },
-      select: { id: true, name: true, email: true, role: true, boleta: true }
+      select: { 
+        id: true, name: true, email: true, role: true, boleta: true,
+        firstName: true, lastNameP: true, lastNameM: true
+      }
     });
+
     res.json({ ok: true, owner, pass: { status: 'USED' } });
   } catch (e) {
     console.error(e);
@@ -92,7 +95,7 @@ router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) 
 });
 
 /**
- * A) GET /api/qr/my-active
+ * GET /api/qr/my-active
  * USER/ADMIN consulta su QR activo (si existe)
  */
 router.get('/my-active', auth, requireRole(['USER','ADMIN']), async (req, res) => {
@@ -114,7 +117,7 @@ router.get('/my-active', auth, requireRole(['USER','ADMIN']), async (req, res) =
 });
 
 /**
- * B) POST /api/qr/revoke
+ * POST /api/qr/revoke
  * ADMIN revoca un QR por id o code
  */
 router.post('/revoke', auth, requireRole(['ADMIN']), async (req, res) => {
@@ -139,7 +142,7 @@ router.post('/revoke', auth, requireRole(['ADMIN']), async (req, res) => {
 });
 
 /**
- * C) GET /api/qr/logs?take=50&skip=0
+ * GET /api/qr/logs?take=50&skip=0
  * ADMIN lista bitácora
  */
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
@@ -166,8 +169,8 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
 });
 
 /**
-* D) GET /api/qr/stats  (ADMIN)
-*/
+ * GET /api/qr/stats  (ADMIN)
+ */
 router.get('/stats', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
     const [users, passes, logs, allowed, denied] = await Promise.all([

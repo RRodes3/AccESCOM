@@ -9,19 +9,22 @@ generator client {
 
 model User {
   id        Int      @id @default(autoincrement())
+  boleta    String   @unique              // ← obligatoria y única
   name      String
+  firstName String                         // ← obligatoria
+  lastNameP String                         // ← obligatoria
+  lastNameM String                         // ← obligatoria
   email     String   @unique
   password  String
   role      Role     @default(USER)
-  boleta    String?          // ← NUEVO (opcional)
   createdAt DateTime @default(now())
 
-  qrPasses  QRPass[]
-  logs      AccessLog[]
+  qrPasses   QRPass[]
 
-  @@index([email])
+  // Relaciones con nombres explícitos para los dos lados hacia AccessLog
+  accessLogs AccessLog[] @relation("AccessByUser")       // dueño del QR (quien entra)
+  guardLogs  AccessLog[] @relation("ValidatedByGuard")   // quien valida (guardia)
 }
-
 
 enum Role {
   ADMIN
@@ -31,14 +34,14 @@ enum Role {
 
 model QRPass {
   id        Int       @id @default(autoincrement())
-  code      String    @unique // token del QR
+  code      String    @unique
   userId    Int
   user      User      @relation(fields: [userId], references: [id])
   status    QRStatus  @default(ACTIVE)
   expiresAt DateTime?
   createdAt DateTime  @default(now())
 
-  // Back-relation hacia AccessLog.qr
+  // navegación inversa opcional
   logs AccessLog[]
 
   @@index([code])
@@ -52,22 +55,23 @@ enum QRStatus {
 }
 
 model AccessLog {
-  id Int @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
 
-  // Relación con el usuario dueño (quien emite / a quien pertenece el pase)
-  userId Int
-  user   User @relation("AccessByUser", fields: [userId], references: [id])
+  // Relación al dueño del acceso (usuario del QR)
+  userId    Int
+  user      User      @relation("AccessByUser", fields: [userId], references: [id])
 
-  // Relación con el QR involucrado (opcional)
-  qrId Int?
-  qr   QRPass? @relation(fields: [qrId], references: [id])
-
-  // Quién validó (guardia). Es opcional porque hay eventos ISSUE sin guardia.
-  guardId Int?
-  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
+  // Relación al QR
+  qrId      Int?
+  qr        QRPass?   @relation(fields: [qrId], references: [id])
 
   action    AccessType
-  createdAt DateTime   @default(now())
+
+  // Relación al guardia que valida
+  guardId   Int?
+  guard     User?     @relation("ValidatedByGuard", fields: [guardId], references: [id])
+
+  createdAt DateTime  @default(now())
 }
 
 enum AccessType {

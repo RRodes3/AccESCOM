@@ -27,7 +27,7 @@ app.use(
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Rutas
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', require('./src/routers/auth'));
 
 // Arrancar
 const PORT = process.env.PORT || 3000; // mantengo 3000 según tu setup

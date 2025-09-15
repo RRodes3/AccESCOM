@@ -9,6 +9,8 @@ import GenerateQR from './pages/GenerateQR';
 import AccessReport from './pages/AccessReport';
 import { Suspense, lazy } from 'react';
 const GuardScan = lazy(() => import('./pages/GuardScan'));
+import Register from './pages/Register';
+
 
 function App() {
   return (
@@ -16,8 +18,9 @@ function App() {
       <Navbar />
       <div className="container mt-4">
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Home />} /> //pagina principal
+          <Route path="/register" element={<Register />} /> //registro usuario
+          <Route path="/login" element={<Login />} /> //login usuario
 
           <Route
             path="/dashboard"

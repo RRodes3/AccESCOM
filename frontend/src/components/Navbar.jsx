@@ -21,29 +21,26 @@ export default function Navbar() {
         </button>
 
         <div className="collapse navbar-collapse" id="mainNavbar">
+          {/* LADO IZQUIERDO */}
           <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-            {/* Dashboard SOLO si hay sesión */}
             {user && (
               <li className="nav-item">
                 <Link className="nav-link" to="/dashboard">Dashboard</Link>
               </li>
             )}
 
-            {/* USER: generar QR (ADMIN ya NO) */}
             {user?.role === 'USER' && (
               <li className="nav-item">
                 <Link className="nav-link" to="/qr">Generar QR</Link>
               </li>
             )}
 
-            {/* GUARD: escanear QR (ADMIN ya NO) */}
             {user?.role === 'GUARD' && (
               <li className="nav-item">
                 <Link className="nav-link" to="/guard-scan">Escanear QR</Link>
               </li>
             )}
 
-            {/* ADMIN: reporte */}
             {user?.role === 'ADMIN' && (
               <li className="nav-item">
                 <Link className="nav-link" to="/access-report">Reporte</Link>
@@ -51,11 +48,17 @@ export default function Navbar() {
             )}
           </ul>
 
+          {/* LADO DERECHO */}
           <ul className="navbar-nav ms-auto">
             {!user ? (
-              <li className="nav-item">
-                <Link className="btn btn-outline-light btn-sm" to="/login">Iniciar sesión</Link>
-              </li>
+              <>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/register">Registrarse</Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="btn btn-outline-light btn-sm ms-2" to="/login">Iniciar sesión</Link>
+                </li>
+              </>
             ) : (
               <>
                 <li className="nav-item me-2">
