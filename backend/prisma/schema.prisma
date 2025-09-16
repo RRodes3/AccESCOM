@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
@@ -7,47 +9,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  boleta    String   @unique
-  name      String
-  firstName String
-  lastNameP String
-  lastNameM String
-  email     String   @unique
-  password  String
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-
-  // Soft delete
-  isActive Boolean @default(true)
-  deletedAt DateTime?
-
-  qrPasses   QRPass[]
-  accessLogs AccessLog[] @relation("AccessByUser")
-  guardLogs  AccessLog[] @relation("ValidatedByGuard")
-}
-
-
 enum Role {
   ADMIN
   USER
   GUARD
-}
-
-model QRPass {
-  id        Int       @id @default(autoincrement())
-  code      String    @unique
-  userId    Int
-  user      User      @relation(fields: [userId], references: [id])
-  status    QRStatus  @default(ACTIVE)
-  expiresAt DateTime?
-  createdAt DateTime  @default(now())
-
-  // navegación inversa opcional
-  logs AccessLog[]
-
-  @@index([code])
 }
 
 enum QRStatus {
@@ -57,28 +22,71 @@ enum QRStatus {
   EXPIRED
 }
 
-model AccessLog {
-  id        Int       @id @default(autoincrement())
-
-  // Relación al dueño del acceso (usuario del QR)
-  userId    Int
-  user      User      @relation("AccessByUser", fields: [userId], references: [id])
-
-  // Relación al QR
-  qrId      Int?
-  qr        QRPass?   @relation(fields: [qrId], references: [id])
-
-  action    AccessType
-
-  // Relación al guardia que valida
-  guardId   Int?
-  guard     User?     @relation("ValidatedByGuard", fields: [guardId], references: [id])
-
-  createdAt DateTime  @default(now())
-}
-
 enum AccessType {
   ISSUE
   VALIDATE_ALLOW
   VALIDATE_DENY
+}
+
+enum AccessState {
+  INSIDE
+  OUTSIDE
+}
+
+enum QRKind {
+  ENTRY
+  EXIT
+}
+
+model User {
+  id          Int         @id @default(autoincrement())
+  boleta      String?     @unique
+  name        String
+  firstName   String?
+  lastNameP   String?
+  lastNameM   String?
+  email       String      @unique
+  password    String
+  role        Role        @default(USER)
+  createdAt   DateTime    @default(now())
+  isActive    Boolean     @default(true)
+  accessState AccessState @default(OUTSIDE)
+
+  qrPasses   QRPass[]
+  accessLogs AccessLog[] @relation("AccessByUser")
+  guardLogs  AccessLog[] @relation("ValidatedByGuard")
+
+  @@index([email])
+}
+
+model QRPass {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id])
+  kind      QRKind    @default(ENTRY) // default temporal recomendado
+  status    QRStatus  @default(ACTIVE)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  logs AccessLog[]
+
+  @@index([code])
+}
+
+model AccessLog {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation("AccessByUser", fields: [userId], references: [id])
+
+  qrId Int?
+  qr   QRPass? @relation(fields: [qrId], references: [id])
+
+  kind   QRKind?
+  action AccessType
+
+  guardId Int?
+  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
+
+  createdAt DateTime @default(now())
 }
