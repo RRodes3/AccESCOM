@@ -20,7 +20,7 @@ model User {
   createdAt DateTime @default(now())
 
   // Soft delete
-  isActive  Boolean  @default(true)
+  isActive Boolean @default(true)
   deletedAt DateTime?
 
   qrPasses   QRPass[]

@@ -13,7 +13,8 @@ const RE_BOLETA    = /^\d{10}$/;
 const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
-const isInstitutional = (email) => RE_EMAIL_DOT.test((email||'')) || RE_EMAIL_COMPACT.test((email||''));
+const isInstitutional = (email) => RE_EMAIL_DOT.test((email || '').trim().toLowerCase()) || RE_EMAIL_COMPACT.test((email || '').trim().toLowerCase());
+
 
 export default function AdminUsers() {
   // --- Estado de formulario de alta ---

@@ -5,38 +5,31 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 
-const authRoutes = require('./src/routers/auth'); // OJO: tu carpeta es "routers"
-
 const app = express();
 
-// Middlewares base
+// ---------- Middlewares ----------
 app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:3001').split(','), // tu front corre en 3001
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:3000')
+      .split(',')
+      .map(s => s.trim()),
     credentials: true,
   })
 );
 
-// Rutas de administración bajo /api/admin
-app.use('/api/admin', require('./src/routers/adminUsers'));
-
-// Healthcheck bajo /api
+// ---------- Rutas ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-// Rutas de autenticación bajo /api/auth
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', require('./src/routers/auth'));
+app.use('/api/admin', require('./src/routers/adminUsers'));
+app.use('/api/qr', require('./src/routers/qr'));
 
-// Rutas de QR bajo /api/qr
-const qrRoutes = require('./src/routers/qr');
-app.use('/api/qr', qrRoutes);
-
-
-// (Opcional) raíz simple
+// (opcional)
 app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));
 
-// Arranque
+// ---------- Arranque ----------
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
