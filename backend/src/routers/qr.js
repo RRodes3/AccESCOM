@@ -1,35 +1,115 @@
+// backend/src/routers/qr.js
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
+const KINDS = new Set(['ENTRY', 'EXIT']);
+const isValidKind = (k) => typeof k === 'string' && KINDS.has(k);
 
+// Duración del QR en minutos (configurable vía .env)
 const prisma = new PrismaClient();
+const TTL_MINUTES = Math.max(
+  1,
+  parseInt(process.env.QR_TTL_MINUTES || '5', 10) // 5 min pruebas; en prod 10080
+);
+
+// Utils
+const now = () => new Date();
+const addMinutes = (d, m) => new Date(d.getTime() + m * 60 * 1000);
+const isExpired = (pass) => pass.expiresAt && pass.expiresAt <= now();
 
 /**
- * POST /api/qr/issue
- * USER/ADMIN emite un QR (1 activo a la vez, TTL con límites)
+ * Emite o reutiliza el QR activo por tipo (idempotente)
+ */
+async function ensureActivePass(userId, kind, ttlMinutes = TTL_MINUTES) {
+  // 1) ¿hay activo vigente?
+  let pass = await prisma.qRPass.findFirst({
+    where: {
+      userId,
+      kind,
+      status: 'ACTIVE',
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now() } }],
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (pass) return pass;
+
+  // 2) Si hay activo pero vencido, márcalo EXPIRED (por si quedó colgado)
+  const last = await prisma.qRPass.findFirst({
+    where: { userId, kind, status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (last) {
+    await prisma.qRPass.update({
+      where: { id: last.id },
+      data: { status: 'EXPIRED' },
+    });
+  }
+
+  // 3) Crea uno nuevo
+  const code = crypto.randomBytes(16).toString('hex');
+  const expiresAt = addMinutes(now(), ttlMinutes);
+
+  pass = await prisma.qRPass.create({
+    data: { code, userId, kind, expiresAt, status: 'ACTIVE' },
+    select: { id: true, code: true, kind: true, status: true, expiresAt: true, createdAt: true },
+  });
+
+  await prisma.accessLog.create({
+    data: { userId, qrId: pass.id, kind, action: 'ISSUE' },
+  });
+
+  return pass;
+}
+
+/**
+ * POST /api/qr/issue   (USER/ADMIN)
+ * body: { kind: 'ENTRY'|'EXIT' }
+ * Idempotente por (user, kind)
  */
 router.post('/issue', auth, requireRole(['USER','ADMIN']), async (req, res) => {
   try {
-    // TTL entre 1 minuto y 24 horas
-    const ttl = Math.max(1, Math.min(Number(req.body?.ttlMinutes || 30), 1440));
-    const code = crypto.randomBytes(16).toString('hex'); // 32 chars hex
-    const expiresAt = new Date(Date.now() + ttl * 60 * 1000);
+    const kind = String(req.body?.kind || '').toUpperCase();
+    if (!isValidKind(kind)) return res.status(400).json({ error: 'Kind inválido' });
 
-    // Revocar cualquier QR ACTIVO previo del mismo usuario (una sola operación)
-    await prisma.qRPass.updateMany({
-      where: { userId: req.user.id, status: 'ACTIVE' },
-      data: { status: 'REVOKED' }
+    // TTL por env (p.ej. 5 minutos para pruebas)
+    const ttlMin = Math.max(1, Number(process.env.QR_TTL_MINUTES || 5));
+    const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
+
+    // ¿ya hay uno activo de ese tipo?
+    const existing = await prisma.qRPass.findFirst({
+      where: {
+        userId: req.user.id,
+        kind,
+        status: 'ACTIVE',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: 'desc' },
     });
 
+    if (existing) {
+      return res.json({ pass: {
+        id: existing.id, code: existing.code, status: existing.status,
+        kind: existing.kind, expiresAt: existing.expiresAt, createdAt: existing.createdAt
+      }});
+    }
+
+    // crear nuevo (y revocar si hubiera alguno ACTIVE viejo, por higiene)
+    await prisma.qRPass.updateMany({
+      where: { userId: req.user.id, kind, status: 'ACTIVE' },
+      data:  { status: 'REVOKED' }
+    });
+
+    const code = crypto.randomBytes(16).toString('hex');
     const pass = await prisma.qRPass.create({
-      data: { code, userId: req.user.id, expiresAt },
-      select: { id: true, code: true, expiresAt: true, status: true, createdAt: true }
+      data: { code, userId: req.user.id, kind, expiresAt },
+      select: { id:true, code:true, status:true, kind:true, expiresAt:true, createdAt:true }
     });
 
     await prisma.accessLog.create({
-      data: { userId: req.user.id, qrId: pass.id, action: 'ISSUE' }
+      data: { userId: req.user.id, qrId: pass.id, action: 'ISSUE', kind }
     });
 
     res.json({ pass });
@@ -40,110 +120,225 @@ router.post('/issue', auth, requireRole(['USER','ADMIN']), async (req, res) => {
 });
 
 /**
- * POST /api/qr/validate
- * GUARD/ADMIN valida un QR
+ * GET /api/qr/my-active?kind=ENTRY&autocreate=1
+ * Si autocreate=1, asegura tener uno activo (idempotente)
  */
-router.post('/validate', auth, requireRole(['GUARD','ADMIN']), async (req, res) => {
+router.get('/my-active', auth, requireRole(['USER','ADMIN']), async (req, res) => {
+  try {
+    const kind = String(req.query?.kind || '').toUpperCase();
+    if (!isValidKind(kind)) {
+      return res.status(400).json({ error: 'Kind inválido' });
+    }
+
+    // Estado actual del usuario (por UX bloqueamos mostrar el QR “equivocado”)
+    const u = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { accessState: true }
+    });
+    const accessState = u?.accessState || 'OUTSIDE';
+
+    if (accessState === 'INSIDE' && kind === 'ENTRY') {
+      return res.status(409).json({ error: 'Tu QR de entrada está deshabilitado. Debes salir primero.' });
+    }
+    if (accessState === 'OUTSIDE' && kind === 'EXIT') {
+      return res.status(409).json({ error: 'Tu QR de salida está deshabilitado. Debes entrar primero.' });
+    }
+
+    const autocreate = String(req.query?.autocreate || '') === '1';
+
+    // Buscar activo vigente de ese tipo
+    let pass = await prisma.qRPass.findFirst({
+      where: {
+        userId: req.user.id,
+        kind,
+        status: 'ACTIVE',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id:true, code:true, status:true, kind:true, expiresAt:true, createdAt:true }
+    });
+
+    // Si no hay y autocreate=1, crear uno nuevo (rotando cualquier ACTIVE “viejo”)
+    if (!pass && autocreate) {
+      const ttlMin = Math.max(1, Number(process.env.QR_TTL_MINUTES || 5));
+      const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
+
+      await prisma.qRPass.updateMany({
+        where: { userId: req.user.id, kind, status: 'ACTIVE' },
+        data:  { status: 'REVOKED' }
+      });
+
+      const code = crypto.randomBytes(16).toString('hex');
+      pass = await prisma.qRPass.create({
+        data: { code, userId: req.user.id, kind, expiresAt, status: 'ACTIVE' },
+        select: { id:true, code:true, status:true, kind:true, expiresAt:true, createdAt:true }
+      });
+
+      await prisma.accessLog.create({
+        data: { userId: req.user.id, qrId: pass.id, action: 'ISSUE', kind }
+      });
+    }
+
+    return res.json({ pass: pass || null });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo consultar el QR activo' });
+  }
+});
+
+/**
+ * POST /api/qr/validate   (GUARD/ADMIN)
+ * body: { code }
+ * (Opcional) coherencia con estado de acceso del usuario
+ */
+router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   try {
     const { code } = req.body || {};
-    // Validar formato: 32 hex
-    if (typeof code !== 'string' || !/^[0-9a-f]{32}$/i.test(code)) {
+    if (typeof code !== 'string' || code.length < 16) {
       return res.status(400).json({ ok: false, reason: 'code inválido' });
     }
 
     const pass = await prisma.qRPass.findUnique({ where: { code } });
-    if (!pass) {
-      return res.status(404).json({ ok: false, reason: 'QR no encontrado' });
-    }
+    if (!pass) return res.status(404).json({ ok: false, reason: 'QR no encontrado' });
 
-    // Expiración
-    if (pass.expiresAt && pass.expiresAt < new Date()) {
+    // ¿expirado o no activo?
+    if (isExpired(pass)) {
       await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'EXPIRED' } });
       await prisma.accessLog.create({
-        data: { userId: pass.userId, qrId: pass.id, action: 'VALIDATE_DENY', guardId: req.user.id }
+        data: { userId: pass.userId, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id },
       });
       return res.status(400).json({ ok: false, reason: 'QR expirado' });
     }
-
-    // Estado
     if (pass.status !== 'ACTIVE') {
       await prisma.accessLog.create({
-        data: { userId: pass.userId, qrId: pass.id, action: 'VALIDATE_DENY', guardId: req.user.id }
+        data: { userId: pass.userId, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id },
       });
       return res.status(400).json({ ok: false, reason: `QR ${pass.status}` });
     }
 
-    // Marcar como usado
-    await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'USED' } });
+    // --- coherencia con el estado actual del usuario ---
+    const user = await prisma.user.findUnique({ where: { id: pass.userId } });
+
+    if (pass.kind === 'ENTRY' && user.accessState === 'INSIDE') {
+      await prisma.accessLog.create({
+        data: { userId: pass.userId, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id },
+      });
+      return res.status(400).json({ ok: false, reason: 'Usuario ya está dentro.' });
+    }
+    if (pass.kind === 'EXIT' && user.accessState === 'OUTSIDE') {
+      await prisma.accessLog.create({
+        data: { userId: pass.userId, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id },
+      });
+      return res.status(400).json({ ok: false, reason: 'Usuario ya está fuera.' });
+    }
+
+    // --- anti doble-tap opcional (3s) ---
+    const lastOk = await prisma.accessLog.findFirst({
+      where: { qrId: pass.id, action: 'VALIDATE_ALLOW' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (lastOk && Date.now() - new Date(lastOk.createdAt).getTime() < 3000) {
+      return res.status(429).json({ ok: false, reason: 'Escaneo duplicado muy reciente.' });
+    }
+
+    // ✅ NO marcar el QR como USED: se mantiene ACTIVE hasta expirar
+    await prisma.user.update({
+      where: { id: pass.userId },
+      data: { accessState: user.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE' },
+    });
     await prisma.accessLog.create({
-      data: { userId: pass.userId, qrId: pass.id, action: 'VALIDATE_ALLOW', guardId: req.user.id }
+      data: { userId: pass.userId, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_ALLOW', guardId: req.user.id },
     });
 
     const owner = await prisma.user.findUnique({
       where: { id: pass.userId },
-      select: { 
-        id: true, name: true, email: true, role: true, boleta: true,
-        firstName: true, lastNameP: true, lastNameM: true
-      }
+      select: { id: true, name: true, email: true, role: true, boleta: true, firstName: true, lastNameP: true, lastNameM: true },
     });
 
-    res.json({ ok: true, owner, pass: { status: 'USED' } });
+    // Devuelve el estado REAL del QR (seguirá ACTIVE) y su expiración
+    res.json({ ok: true, owner, pass: { status: pass.status, kind: pass.kind, expiresAt: pass.expiresAt } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, reason: 'Error validando' });
   }
 });
 
-/**
- * GET /api/qr/my-active
- * USER/ADMIN consulta su QR activo (si existe)
- */
-router.get('/my-active', auth, requireRole(['USER','ADMIN']), async (req, res) => {
+// POST /api/qr/ensure-both  (USER/ADMIN)
+// Crea (si faltan) los QR ENTRY y EXIT con el MISMO expiresAt.
+// POST /api/qr/ensure-both  (USER/ADMIN)
+// Si faltan, crea ENTRY y/o EXIT con el MISMO expiresAt; si ya existen, los reutiliza.
+router.post('/ensure-both', auth, requireRole(['USER','ADMIN']), async (req, res) => {
   try {
-    const pass = await prisma.qRPass.findFirst({
-      where: {
-        userId: req.user.id,
-        status: 'ACTIVE',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, code: true, status: true, expiresAt: true, createdAt: true }
+    const ttlMin = Math.max(1, Number(process.env.QR_TTL_MINUTES || 5));
+    const fixedExpiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) Leer los activos vigentes
+      const [entryActive, exitActive] = await Promise.all([
+        tx.qRPass.findFirst({
+          where: {
+            userId: req.user.id, kind: 'ENTRY', status: 'ACTIVE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        tx.qRPass.findFirst({
+          where: {
+            userId: req.user.id, kind: 'EXIT', status: 'ACTIVE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+
+      let entry = entryActive;
+      let exit  = exitActive;
+
+      // helper para crear con expiresAt fijo
+      const createWithFixed = (kind) =>
+        tx.qRPass.create({
+          data: {
+            code: require('crypto').randomBytes(16).toString('hex'),
+            userId: req.user.id,
+            kind,
+            status: 'ACTIVE',
+            expiresAt: fixedExpiresAt,
+          },
+          select: { id:true, code:true, kind:true, status:true, expiresAt:true, createdAt:true },
+        });
+
+      // 2) Para cada tipo que falte, revocar “ACTIVE” viejos y crear nuevo con el mismo expiresAt
+      if (!entry) {
+        await tx.qRPass.updateMany({
+          where: { userId: req.user.id, kind: 'ENTRY', status: 'ACTIVE' },
+          data:  { status: 'REVOKED' },
+        });
+        entry = await createWithFixed('ENTRY');
+        await tx.accessLog.create({ data: { userId: req.user.id, qrId: entry.id, kind: 'ENTRY', action: 'ISSUE' } });
+      }
+
+      if (!exit) {
+        await tx.qRPass.updateMany({
+          where: { userId: req.user.id, kind: 'EXIT', status: 'ACTIVE' },
+          data:  { status: 'REVOKED' },
+        });
+        exit = await createWithFixed('EXIT');
+        await tx.accessLog.create({ data: { userId: req.user.id, qrId: exit.id, kind: 'EXIT', action: 'ISSUE' } });
+      }
+
+      return { entry, exit };
     });
-    res.json({ pass });
+
+    res.json({ ok: true, entry: result.entry, exit: result.exit });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'No se pudo consultar el QR activo' });
+    res.status(500).json({ error: 'No se pudieron asegurar los QR' });
   }
 });
 
-/**
- * POST /api/qr/revoke
- * ADMIN revoca un QR por id o code
- */
-router.post('/revoke', auth, requireRole(['ADMIN']), async (req, res) => {
-  try {
-    const { id, code } = req.body || {};
-    if (!id && !code) return res.status(400).json({ error: 'Falta id o code' });
-
-    const where = id ? { id: Number(id) } : { code: String(code) };
-    const pass = await prisma.qRPass.findUnique({ where });
-    if (!pass) return res.status(404).json({ error: 'QR no encontrado' });
-
-    await prisma.qRPass.update({ where, data: { status: 'REVOKED' } });
-    await prisma.accessLog.create({
-      data: { userId: pass.userId, qrId: pass.id, action: 'VALIDATE_DENY', guardId: req.user.id }
-    });
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'No se pudo revocar' });
-  }
-});
 
 /**
- * GET /api/qr/logs?take=50&skip=0
- * ADMIN lista bitácora
+ * C) GET /api/qr/logs?take=50&skip=0  (ADMIN)
  */
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
@@ -154,9 +349,9 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
         take, skip,
         orderBy: { createdAt: 'desc' },
         include: {
-          user:  { select: { name: true, email: true } },
+          user:  { select: { name: true, email: true, boleta: true } },
           guard: { select: { name: true, email: true } },
-          qr:    { select: { code: true } }
+          qr:    { select: { code: true, kind: true } }
         }
       }),
       prisma.accessLog.count()
@@ -169,7 +364,7 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
 });
 
 /**
- * GET /api/qr/stats  (ADMIN)
+ * D) GET /api/qr/stats  (ADMIN)
  */
 router.get('/stats', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
@@ -184,6 +379,23 @@ router.get('/stats', auth, requireRole(['ADMIN']), async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudieron calcular estadísticas' });
+  }
+});
+/*
+********************************************
+// backend/src/routers/qr.js (solo pruebas!)
+********************************************
+*/
+router.post('/reset-state', auth, async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { accessState: 'OUTSIDE' }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo resetear el estado' });
   }
 });
 

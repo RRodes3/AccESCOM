@@ -23,14 +23,21 @@ function playFeedback(ok) {
 
 
 /** Tarjeta de resultado (autorizado/denegado) */
-function ScanResultCard({ ok, owner, reason, onScanAgain, onBack }) {
+function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   const approved = ok === true;
+
+  // Mapea roles para mostrar
   const roleLabel = { ADMIN: 'Administrador', USER: 'Alumno', GUARD: 'Guardia' };
+
+  // Encabezado según tipo y resultado de QR
+  const heading = approved
+    ? (kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido')
+    : (kind === 'EXIT' ? 'Salida denegada' : 'Acceso denegado');
 
   return (
     <div className="container mt-4" style={{ maxWidth: 420 }}>
       <div className={`rounded-3 text-white text-center fw-bold py-2 ${approved ? 'bg-success' : 'bg-danger'}`}>
-        {approved ? 'Acceso Autorizado' : 'Acceso Denegado'}
+        {heading}
       </div>
 
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
@@ -101,17 +108,23 @@ export default function GuardScan() {
   };
 
   const stopScanner = useCallback(async () => {
-    if (!startedRef.current || !scannerRef.current) return;
+    if (!startedRef.current || !scannerRef.current){
+    // aunque “creamos” que no está corriendo, intenta apagar cualquier stream
+    hardStopCamera(`#${regionId}`);
+    return;}
     const scanner = scannerRef.current;
     try {
-      await scanner.stop();     // apaga cámara
-      await scanner.clear();    // limpia DOM
+      await scanner.stop().catch(() => {});   // apaga cámara (best effort)
+      await scanner.clear().catch(() => {});  // limpia DOM
     } catch {
       clearContainer();
     } finally {
+      // Fallback duro: por si el stop() no logró cortar los tracks
+      hardStopCamera(`#${regionId}`);
       startedRef.current = false;
       setRunning(false);
       scannerRef.current = null; // fuerza nueva creación en próximo start
+      setMsg(''); // no mostrar alertas mientras está detenido
     }
   }, []);
 
@@ -119,6 +132,7 @@ export default function GuardScan() {
     if (startingRef.current || startedRef.current) return;
     startingRef.current = true;
     try {
+      setMsg(''); // limpia mensajes previos
       if (!scannerRef.current) scannerRef.current = new Html5Qrcode(regionId);
       else clearContainer();
 
@@ -137,7 +151,7 @@ export default function GuardScan() {
             const { data } = await api.post('/qr/validate', { code: text });
             playFeedback(!!data.ok);                // ← beep "positivo"
             // Guardamos resultado; NO reanudamos: mostramos pantalla de resultado
-            setResult({ ok: data.ok, owner: data.owner, reason: data.reason });
+            setResult({ ok: data.ok, kind: data.pass?.kind, owner: data.owner, reason: data.reason });
           } catch (e) {
             playFeedback(false);                    // ← beep "negativo"
             setResult({
@@ -145,9 +159,9 @@ export default function GuardScan() {
               reason: e?.response?.data?.reason || 'Error validando',
             });
           } finally {
-            setMsg('');
+            setMsg(''); // limpia mensaje de validando
             // detén la cámara al terminar el ciclo de validación y mostrar pantalla
-            await stopScanner();
+            await stopScanner(); // esto también ejecuta el hardStop
           }
         },
         () => { /* errores de escaneo ignorados */ }
@@ -155,6 +169,7 @@ export default function GuardScan() {
 
       startedRef.current = true;
       setRunning(true);
+      setMsg(''); //asegurar que no quede mensaje
     } catch (err) {
       console.error('Error start scanner:', err);
       setMsg('No se pudo iniciar la cámara');
@@ -173,9 +188,10 @@ export default function GuardScan() {
   }, [startScanner, stopScanner]);
 
   // Botones de la tarjeta
-  const handleScanAgain = async () => {
+  const handleScanAgain = () => {
+    setMsg(''); // limpia cualquier alerta previa
     setResult(null);
-    await startScanner();
+    setTimeout(() => { startScanner(); }, 0);
   };
 
   const handleBack = () => {
@@ -187,6 +203,7 @@ export default function GuardScan() {
     return (
       <ScanResultCard
         ok={result.ok}
+        kind={result.kind}
         owner={result.owner}
         reason={result.reason}
         onScanAgain={handleScanAgain}
@@ -219,7 +236,40 @@ export default function GuardScan() {
         className="mt-2"
       />
 
+      {/* Cuando no está corriendo, muestra “Regresar al menú” */}
+      {!running && (
+        <div className="mt-3 d-flex justify-content-end">
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={() => navigate('/dashboard')}
+          >
+            Regresar al menú
+          </button>
+        </div>
+      )}
+
       {msg && <div className="alert alert-warning mt-3">{msg}</div>}
     </div>
   );
+  // Mata cualquier stream activo (fallback por si html5-qrcode no libera bien)
+  function hardStopCamera(regionSelector = '#reader') {
+    // primero intenta en el contenedor del lector
+    const scoped = document.querySelectorAll(`${regionSelector} video`);
+    const all = scoped.length ? scoped : document.querySelectorAll('video');
+    all.forEach(v => {
+      try {
+        const src = v.srcObject;
+        if (src && typeof src.getTracks === 'function') {
+          src.getTracks().forEach(t => {
+            try { t.stop(); } catch {}
+          });
+        }
+        v.srcObject = null;
+        v.removeAttribute('src'); // Safari/Firefox a veces lo agradecen
+        v.load?.();
+      } catch {}
+    });
+  }
+
 }
