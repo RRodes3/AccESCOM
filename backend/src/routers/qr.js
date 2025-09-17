@@ -201,6 +201,51 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
     const pass = await prisma.qRPass.findUnique({ where: { code } });
     if (!pass) return res.status(404).json({ ok: false, reason: 'QR no encontrado' });
 
+    if (pass.guestId) {
+  // invitado
+  const guest = await prisma.guestVisit.findUnique({ where: { id: pass.guestId } });
+
+  // vencimiento o estado del QR
+  if (isExpired(pass)) {
+    await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'EXPIRED' } });
+    await prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id } });
+    return res.status(400).json({ ok: false, reason: 'QR invitado expirado' });
+  }
+  if (pass.status !== 'ACTIVE') {
+    await prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id } });
+    return res.status(400).json({ ok: false, reason: `QR invitado ${pass.status}` });
+  }
+
+  // reglas de transición para invitado (un solo uso por cada tipo)
+  if (pass.kind === 'ENTRY') {
+    if (guest.state !== 'OUTSIDE') {
+      await prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id } });
+      return res.status(400).json({ ok: false, reason: 'Invitado ya está dentro o finalizó' });
+    }
+    await prisma.$transaction([
+      prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'USED' } }),
+      prisma.guestVisit.update({ where: { id: guest.id }, data: { state: 'INSIDE' } }),
+      prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_ALLOW', guardId: req.user.id } })
+    ]);
+
+    const owner = { role: 'INVITADO', name: [guest.firstName, guest.lastNameP, guest.lastNameM].filter(Boolean).join(' ') };
+    return res.json({ ok: true, owner, pass: { status: 'USED', kind: pass.kind } });
+  }
+
+  // kind === 'EXIT'
+  if (guest.state !== 'INSIDE') {
+    await prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_DENY', guardId: req.user.id } });
+    return res.status(400).json({ ok: false, reason: 'Invitado no está dentro' });
+  }
+  await prisma.$transaction([
+    prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'USED' } }),
+    prisma.guestVisit.update({ where: { id: guest.id }, data: { state: 'COMPLETED' } }),
+    prisma.accessLog.create({ data: { guestId: guest.id, qrId: pass.id, kind: pass.kind, action: 'VALIDATE_ALLOW', guardId: req.user.id } })
+  ]);
+  const owner = { role: 'INVITADO', name: [guest.firstName, guest.lastNameP, guest.lastNameM].filter(Boolean).join(' ') };
+  return res.json({ ok: true, owner, pass: { status: 'USED', kind: pass.kind } });
+}
+
     // ¿expirado o no activo?
     if (isExpired(pass)) {
       await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'EXPIRED' } });

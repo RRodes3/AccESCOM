@@ -135,6 +135,8 @@ export default function GuardScan() {
       setMsg(''); // limpia mensajes previos
       if (!scannerRef.current) scannerRef.current = new Html5Qrcode(regionId);
       else clearContainer();
+      // Por si quedó un stream “huérfano” de un intento previo
+      hardStopCamera(`#${regionId}`);
 
       const scanner = scannerRef.current;
       const config = { fps: 10, qrbox: { width: 260, height: 260 } };
@@ -174,6 +176,7 @@ export default function GuardScan() {
       console.error('Error start scanner:', err);
       setMsg('No se pudo iniciar la cámara');
       try { await scannerRef.current?.clear?.(); } catch {}
+      hardStopCamera(`#${regionId}`);
       scannerRef.current = null;
     } finally {
       startingRef.current = false;
@@ -184,7 +187,9 @@ export default function GuardScan() {
   useEffect(() => {
     clearContainer();
     startScanner();
-    return () => { stopScanner(); };
+    return () => { stopScanner(); 
+    hardStopCamera(`#${regionId}`);
+    };
   }, [startScanner, stopScanner]);
 
   // Botones de la tarjeta

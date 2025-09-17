@@ -1,17 +1,15 @@
-// frontend/src/pages/Home.js (o .jsx)
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 
-export default function Home() {
+export default function HealthCheck() {
   const [msg, setMsg] = useState('Cargando…');
 
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get('/health'); // -> /api/health
+        const { data } = await api.get('/health');
         setMsg(JSON.stringify(data));
       } catch (e) {
-        console.log('HOME /health error:', e?.response?.status, e?.response?.data, e?.message);
         setMsg(`Error: ${e?.message || 'No se pudo conectar'}`);
       }
     })();
@@ -19,7 +17,7 @@ export default function Home() {
 
   return (
     <div className="container mt-4">
-      <h2>Bienvenido a AccESCOM</h2>
+      <h2>HealthCheck</h2>
       <p><b>Mensaje del backend:</b> {msg}</p>
     </div>
   );

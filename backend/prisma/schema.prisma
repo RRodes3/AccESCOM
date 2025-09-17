@@ -59,11 +59,35 @@ model User {
   @@index([email])
 }
 
+model GuestVisit {
+  id         Int       @id @default(autoincrement())
+  firstName  String
+  lastNameP  String
+  lastNameM  String?
+  curp       String    @unique
+  reason     String
+  state      GuestState @default(OUTSIDE) // OUTSIDE -> ENTRY -> INSIDE -> EXIT -> COMPLETED
+  createdAt  DateTime   @default(now())
+  expiresAt  DateTime?
+
+  passes     QRPass[]   // ENTRY y EXIT para el invitado
+  logs       AccessLog[] @relation("AccessByGuest")
+}
+
+enum GuestState {
+  OUTSIDE
+  INSIDE
+  COMPLETED
+}
+
+
 model QRPass {
   id        Int       @id @default(autoincrement())
   code      String    @unique
   userId    Int
   user      User      @relation(fields: [userId], references: [id])
+  guestId   Int?        // ← invitado opcional (userId es null en ese caso)
+  guest     GuestVisit? @relation(fields: [guestId], references: [id])
   kind      QRKind    @default(ENTRY) // default temporal recomendado
   status    QRStatus  @default(ACTIVE)
   expiresAt DateTime?
@@ -78,6 +102,10 @@ model AccessLog {
   id     Int  @id @default(autoincrement())
   userId Int
   user   User @relation("AccessByUser", fields: [userId], references: [id])
+
+// dueño del QR: puede ser user o guest
+  guestId Int?
+  guest   GuestVisit? @relation("AccessByGuest", fields: [guestId], references: [id])
 
   qrId Int?
   qr   QRPass? @relation(fields: [qrId], references: [id])

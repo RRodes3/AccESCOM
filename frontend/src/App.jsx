@@ -1,31 +1,35 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Suspense } from 'react';
+
 import Navbar from './components/Navbar';
-import Home from './pages/Home';
-import DashboardSwitch from './pages/DashboardSwitch';
-import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
-import GenerateQR from './pages/GenerateQR';
-//import GuardScan from './pages/GuardScan';
-import AccessReport from './pages/AccessReport';
-import { Suspense, lazy } from 'react';
-const GuardScan = lazy(() => import('./pages/GuardScan'));
+
+import Landing from './pages/Landing';
 import Register from './pages/Register';
+import Login from './components/Login';
+import GuestRegister from './pages/GuestRegister';
+import HealthCheck from './pages/HealthCheck';
+
+import DashboardSwitch from './pages/DashboardSwitch';
+import GenerateQR from './pages/GenerateQR';
+import GuardScan from './pages/GuardScan';
 import AdminUsers from './pages/AdminUsers';
+import AccessReport from './pages/AccessReport';
 
-
-function App() {
+export default function App() {
   return (
     <Router>
       <Navbar />
       <div className="container mt-4">
         <Routes>
-          <Route path="/" element={<Home />} /> //pagina principal
-          <Route path="/register" element={<Register />} /> //registro usuario
-          <Route path="/login" element={<Login />} /> //login usuario
+          {/* Públicas */}
+          <Route path="/" element={<Landing />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/guest/register" element={<GuestRegister />} />
+          <Route path="/healthcheck" element={<HealthCheck />} />
 
-    // Rutas protegidas
-
-          //Ruta protegida solo para ADMIN
+          {/* Protegidas */}
           <Route
             path="/admin/users"
             element={
@@ -53,11 +57,15 @@ function App() {
             }
           />
 
+          {/* UNA sola ruta para GuardScan.
+              Si quieres mostrar un fallback de carga, usa Suspense aquí. */}
           <Route
             path="/guard-scan"
             element={
               <ProtectedRoute>
-                <GuardScan />
+                <Suspense fallback={<div className="container mt-3">Cargando lector…</div>}>
+                  <GuardScan />
+                </Suspense>
               </ProtectedRoute>
             }
           />
@@ -70,21 +78,8 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/guard-scan"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<div className="container mt-3">Cargando lector…</div>}>
-                  <GuardScan />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
         </Routes>
       </div>
     </Router>
-    
   );
 }
-
-export default App;
