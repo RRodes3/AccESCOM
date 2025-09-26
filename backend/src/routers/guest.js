@@ -1,93 +1,133 @@
-// backend/src/routers/guest.js
 const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
+const { validateCurpPrefix } = require('../utils/curp');
 const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 
-// TTL separado para invitados (minutos)
-const GUEST_TTL_MINUTES = Math.max(5, parseInt(process.env.QR_GUEST_TTL_MINUTES || '1440', 10)); // default 24h
-
-// Validaciones rápidas
+// Letras con acentos y espacios
 const RE_LETTERS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
-const RE_CURP    = /^[A-Z]{4}\d{6}[HM][A-Z]{5}\d{2}$/i; // curp clásico; relaja si lo necesitas
+// CURP 18 chars: 4 letras + 6 dígitos + H/M + 5 letras + alfanum + dígito
+const RE_CURP = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/i;
+// Motivo: letras/dígitos/espacios y símbolos comunes (UNICODE)
+const RE_REASON = /^[\p{L}\p{N}\s.,#()\-]{5,160}$/u;
 
+const TTL_MIN = Math.max(1, parseInt(process.env.GUEST_QR_TTL_MINUTES || '60', 10)); // 60 min por defecto
+const now = () => new Date();
+const addMin = (d, m) => new Date(d.getTime() + m * 60000);
+const rnd = () => crypto.randomBytes(16).toString('hex');
+
+// POST /api/guest/register
 router.post('/register', async (req, res) => {
   try {
     let { firstName, lastNameP, lastNameM, curp, reason } = req.body || {};
-    firstName = String(firstName||'').trim();
-    lastNameP = String(lastNameP||'').trim();
-    lastNameM = String(lastNameM||'').trim();
-    curp      = String(curp||'').trim().toUpperCase();
-    reason    = String(reason||'').trim();
+    firstName = String(firstName || '').trim();
+    lastNameP = String(lastNameP || '').trim();
+    lastNameM = String(lastNameM || '').trim();
+    curp      = String(curp || '').toUpperCase().trim();
+    reason    = String(reason || '').trim();
 
     const errors = {};
-    if (!firstName || !RE_LETTERS.test(firstName)) errors.firstName = 'Nombre inválido';
-    if (!lastNameP || !RE_LETTERS.test(lastNameP)) errors.lastNameP = 'Apellido paterno inválido';
-    if (lastNameM && !RE_LETTERS.test(lastNameM))  errors.lastNameM = 'Apellido materno inválido';
-    if (!curp || !RE_CURP.test(curp))              errors.curp = 'CURP inválida';
-    if (!reason || reason.length < 3)              errors.reason = 'Motivo muy corto';
 
+    // 1) Validaciones de formato
+    if (firstName.length < 3 || !RE_LETTERS.test(firstName))
+      errors.firstName = 'Nombre: solo letras y espacios (mín. 3).';
+
+    if (lastNameP.length < 2 || !RE_LETTERS.test(lastNameP))
+      errors.lastNameP = 'Apellido paterno: solo letras y espacios (mín. 2).';
+
+    if (lastNameM && (lastNameM.length < 2 || !RE_LETTERS.test(lastNameM)))
+      errors.lastNameM = 'Apellido materno: solo letras y espacios (mín. 2) o deja vacío.';
+
+    if (!RE_CURP.test(curp))
+      errors.curp = 'CURP con formato inválido.';
+
+    if (!RE_REASON.test(reason))
+      errors.reason = 'Motivo: 5–160 caracteres (letras/números/espacios y . , # ( ) -).';
+
+    // Si ya hay errores de forma, devuélvelos todos de una vez
     if (Object.keys(errors).length) {
-      return res.status(400).json({ error: 'Validación', errors });
+      return res.status(400).json({ error: 'Validación fallida', errors });
     }
 
-    // Si ya existe un registro todavía vigente con esa CURP y no está COMPLETED, bloquear:
+    // 2) Consistencia CURP ↔ nombres
+    const { ok, expected } = validateCurpPrefix(curp, { firstName, lastNameP, lastNameM });
+    if (!ok) {
+      return res.status(400).json({
+        error: 'Validación de CURP fallida',
+        errors: {
+          curp: `La CURP no coincide con los nombres/apellidos. Prefijo esperado: ${expected}.`
+        }
+      });
+    }
+
+    // 3) Crear visita e inmediatamente emitir 2 QR de un solo uso (ENTRY/EXIT)
+    // ¿Existe visita activa para ese CURP?
     const existing = await prisma.guestVisit.findFirst({
       where: {
         curp,
-        NOT: { state: 'COMPLETED' },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+        OR: [
+          { state: { in: ['OUTSIDE', 'INSIDE'] } },
+          { expiresAt: { gt: new Date() } },
+        ]
       },
-      include: { passes: true }
+      include: {
+        passes: {
+          where: { status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
+        }
+      }
     });
+
     if (existing) {
-      return res.status(409).json({ error: 'Ya tienes un registro vigente. Completa tu visita antes de generar otro.' });
+      // Si ya tiene QR activos, regrésalos tal cual
+      const entry = existing.passes.find(p => p.kind === 'ENTRY');
+      const exit  = existing.passes.find(p => p.kind === 'EXIT');
+      return res.status(200).json({
+        ok: true,
+        reused: true,
+        visitor: {
+          id: existing.id, firstName: existing.firstName, lastNameP: existing.lastNameP,
+          lastNameM: existing.lastNameM, curp: existing.curp, reason: existing.reason,
+          createdAt: existing.createdAt, expiresAt: existing.expiresAt,
+        },
+        passes: {
+          ENTRY: entry ? { code: entry.code, kind: 'ENTRY', expiresAt: entry.expiresAt, status: entry.status } : null,
+          EXIT:  exit  ? { code: exit.code,  kind: 'EXIT',  expiresAt: exit.expiresAt,  status: exit.status  } : null,
+        }
+      });
     }
 
-    const expiresAt = new Date(Date.now() + GUEST_TTL_MINUTES * 60 * 1000);
-    const guest = await prisma.guestVisit.create({
-      data: { firstName, lastNameP, lastNameM: lastNameM || null, curp, reason, expiresAt }
+    // Crear TODO dentro de una transacción
+    const result = await prisma.$transaction(async (tx) => {
+      const visit = await tx.guestVisit.create({
+        data: {
+          firstName, lastNameP, lastNameM, curp, reason,
+          expiresAt: new Date(Date.now() + TTL_MIN * 60 * 1000)
+        }
+      });
+      const expiresAt = visit.expiresAt;
+      const [entry, exit] = await Promise.all([
+        tx.qRPass.create({ data: { code: crypto.randomBytes(16).toString('hex'), guestId: visit.id, kind: 'ENTRY', expiresAt } }),
+        tx.qRPass.create({ data: { code: crypto.randomBytes(16).toString('hex'), guestId: visit.id, kind: 'EXIT',  expiresAt } }),
+      ]);
+      return { visit, entry, exit };
     });
 
-    // Generar 2 QR de un solo uso: ENTRY y EXIT
-    const entryCode = crypto.randomBytes(16).toString('hex');
-    const exitCode  = crypto.randomBytes(16).toString('hex');
-
-    const [entry, exit] = await prisma.$transaction([
-      prisma.qRPass.create({
-        data: {
-          code: entryCode,
-          kind: 'ENTRY',
-          guestId: guest.id,
-          status: 'ACTIVE',
-          expiresAt
-        }
-      }),
-      prisma.qRPass.create({
-        data: {
-          code: exitCode,
-          kind: 'EXIT',
-          guestId: guest.id,
-          status: 'ACTIVE',
-          expiresAt
-        }
-      }),
-    ]);
-
-    return res.json({
+    return res.status(201).json({
       ok: true,
-      guest: {
-        id: guest.id, firstName, lastNameP, lastNameM, curp, reason, expiresAt
+      visitor: {
+        id: result.visit.id, firstName: result.visit.firstName, lastNameP: result.visit.lastNameP,
+        lastNameM: result.visit.lastNameM, curp: result.visit.curp, reason: result.visit.reason,
+        createdAt: result.visit.createdAt, expiresAt: result.visit.expiresAt,
       },
       passes: {
-        entry: { code: entry.code, kind: 'ENTRY', expiresAt: entry.expiresAt },
-        exit:  { code: exit.code,  kind: 'EXIT',  expiresAt: exit.expiresAt }
+        ENTRY: { code: result.entry.code, kind: 'ENTRY', expiresAt: result.entry.expiresAt, status: result.entry.status },
+        EXIT:  { code: result.exit.code,  kind: 'EXIT',  expiresAt: result.exit.expiresAt,  status: result.exit.status  },
       }
     });
   } catch (e) {
-    console.error('GUEST REGISTER ERROR:', e);
-    res.status(500).json({ error: 'No se pudo registrar al invitado' });
+    console.error('GUEST /register error:', e);
+    return res.status(500).json({ error: 'No se pudo registrar la visita' });
   }
 });
 

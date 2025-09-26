@@ -1,15 +1,12 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Suspense } from 'react';
-
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
-
 import Landing from './pages/Landing';
 import Register from './pages/Register';
 import Login from './components/Login';
 import GuestRegister from './pages/GuestRegister';
 import HealthCheck from './pages/HealthCheck';
-
 import DashboardSwitch from './pages/DashboardSwitch';
 import GenerateQR from './pages/GenerateQR';
 import GuardScan from './pages/GuardScan';

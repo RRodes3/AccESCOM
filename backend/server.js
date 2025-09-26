@@ -21,7 +21,6 @@ app.use(
 
 // ---------- Rutas ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-
 app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));
