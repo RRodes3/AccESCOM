@@ -114,12 +114,6 @@ export default function GuestRegister() {
 
   return (
     <div className="container mt-4" style={{ maxWidth: 480 }}>
-      <div
-        className="rounded-3 text-white text-center fw-bold py-2"
-        style={{ background: '#5bbcff' }}
-      >
-        Formulario de registro invitado
-      </div>
 
       <form
         className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3"

@@ -122,9 +122,7 @@ export default function Register() {
 
   return (
     <div className="container mt-4" style={{ maxWidth: 520 }}>
-      <div className="rounded-3 text-white text-center fw-bold py-2" style={{ background: '#5bbcff' }}>
-        Registro de datos generales
-      </div>
+
 
       <form className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3" onSubmit={submit} noValidate>
         {/* Boleta */}
