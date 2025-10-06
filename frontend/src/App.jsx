@@ -1,58 +1,60 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import Navbar from './components/Navbar';
-import Login from './components/Login';            
-import Register from './pages/Register';           
-import Landing from './pages/Landing';             
-import GuestRegister from './pages/GuestRegister'; 
-import HealthCheck from './pages/HealthCheck';     
-import AdminUsers from './pages/AdminUsers';
-import DashboardSwitch from './pages/DashboardSwitch';
-import GenerateQR from './pages/GenerateQR';
-import GuardScan from './pages/GuardScan';
-import AccessReport from './pages/AccessReport';
-import ProtectedRoute from './components/ProtectedRoute'; 
-import { Suspense } from 'react';
+// src/App.jsx
+import React from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
+
+import Navbar from './components/Navbar.jsx';
+import Landing from './pages/Landing.jsx';
+import Login from './components/Login.jsx';
+
+import Register from './pages/Register.jsx';
+import GuestRegister from './pages/GuestRegister.jsx';
+
+import ConfirmRegister from './pages/ConfirmRegister.jsx';
+import ConfirmGuest from './pages/ConfirmGuest.jsx';
+
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+import DashboardSwitch from './pages/DashboardSwitch.jsx';
+import AdminUsers from './pages/AdminUsers.jsx';
+import GenerateQR from './pages/GenerateQR.jsx';
+import GuardScan from './pages/GuardScan.jsx';
+import AccessReport from './pages/AccessReport.jsx';
+import GuestDashboard from './pages/dashboards/GuestDashboard.jsx';
 
 
-// Wrapper para ocultar el Navbar en ciertas páginas
-function Layout({ children }) {
+function AppLayout() {
   const location = useLocation();
-  const hideNavbarOn = ['/']; // páginas donde NO quieres navbar (landing)
+  const hideNavbarOn = ['/']; // Oculta el navbar solo en la landing
+  const showNavbar = !hideNavbarOn.includes(location.pathname);
 
   return (
     <>
-      {!hideNavbarOn.includes(location.pathname) && <Navbar color="#007be4" />}
-      <div className="container mt-4">{children}</div>
-    </>
-  );
-}
-
-export default function App() {
-  return (
-    <Router>
-      <Layout>
+      {showNavbar && <Navbar />}
+      <div className="container mt-4">
         <Routes>
-          <Route path="/" element={<Landing />} /> {/* Landing sin navbar */}
+          {/* Públicas */}
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/guest/register" element={<GuestRegister />} />
-          <Route path="/healthcheck" element={<HealthCheck />} />
+          <Route path="/guest/dashboard" element={<GuestDashboard />} />
+          <Route path="/register/confirm" element={<ConfirmRegister />} />
+          <Route path="/guest/confirm" element={<ConfirmGuest />} />
 
           {/* Protegidas */}
-          <Route
-            path="/admin/users"
-            element={
-              <ProtectedRoute roles={['ADMIN']}>
-                <AdminUsers />
-              </ProtectedRoute>
-            }
-          />
-
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
                 <DashboardSwitch />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute roles={['ADMIN']}>
+                <AdminUsers />
               </ProtectedRoute>
             }
           />
@@ -70,9 +72,7 @@ export default function App() {
             path="/guard-scan"
             element={
               <ProtectedRoute>
-                <Suspense fallback={<div className="container mt-3">Cargando lector…</div>}>
-                  <GuardScan />
-                </Suspense>
+                <GuardScan />
               </ProtectedRoute>
             }
           />
@@ -80,13 +80,18 @@ export default function App() {
           <Route
             path="/access-report"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute roles={['ADMIN']}>
                 <AccessReport />
               </ProtectedRoute>
             }
           />
         </Routes>
-      </Layout>
-    </Router>
+      </div>
+    </>
   );
+}
+
+export default function App() {
+  // ❌ Nada de <BrowserRouter> aquí
+  return <AppLayout />;
 }

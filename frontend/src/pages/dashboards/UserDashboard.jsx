@@ -92,9 +92,6 @@ export default function UserDashboard() {
 
   return (
     <div className="container mt-3" style={{ maxWidth: 480 }}>
-      <div className="rounded-3 text-white fw-bold py-2 px-3" style={{ background: '#5bbcff' }}>
-        Bienvenido(a): {user?.name}
-      </div>
 
       {!showKind ? (
         <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3 text-center">

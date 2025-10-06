@@ -1,6 +1,6 @@
 // frontend/src/pages/Landing.jsx
 import { Link } from 'react-router-dom';
-import logo from '../assets/escudoESCOM.jpg'; // coloca tu imagen en /src/assets
+import logo from '../assets/escudoESCOM.jpg';
 
 export default function Landing() {
   return (
