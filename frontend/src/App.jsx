@@ -38,7 +38,8 @@ function AppLayout() {
           <Route path="/guest/register" element={<GuestRegister />} />
           <Route path="/guest/dashboard" element={<GuestDashboard />} />
           <Route path="/register/confirm" element={<ConfirmRegister />} />
-          <Route path="/guest/confirm" element={<ConfirmGuest />} />
+           {/*--  <Route path="/guest/confirm" element={<ConfirmGuest />} />  --*/}
+          <Route path="/confirm-guest" element={<ConfirmGuest />} />
 
           {/* Protegidas */}
           <Route

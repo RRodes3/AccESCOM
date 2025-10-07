@@ -10,12 +10,20 @@ const RE_LETTERS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 // CURP 18 chars: 4 letras + 6 dígitos + H/M + 5 letras + alfanum + dígito
 const RE_CURP = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/i;
 // Motivo: letras/dígitos/espacios y símbolos comunes (UNICODE)
-const RE_REASON = /^[\p{L}\p{N}\s.,#()\-]{5,160}$/u;
+const RE_REASON = /^[\p{L}\p{N}\s.,#()\-\u0023]{5,160}$/u; // permite #, -, paréntesis, etc.
 
 const TTL_MIN = Math.max(1, parseInt(process.env.GUEST_QR_TTL_MINUTES || '60', 10)); // 60 min por defecto
 const now = () => new Date();
 const addMin = (d, m) => new Date(d.getTime() + m * 60000);
 const rnd = () => crypto.randomBytes(16).toString('hex');
+
+// Normaliza el payload de QR para el frontend
+const packPass = (p) => p && ({
+  code: p.code,
+  kind: p.kind,
+  expiresAt: p.expiresAt,
+  status: p.status,
+});
 
 // POST /api/guest/register
 router.post('/register', async (req, res) => {
@@ -45,7 +53,6 @@ router.post('/register', async (req, res) => {
     if (!RE_REASON.test(reason))
       errors.reason = 'Motivo: 5–160 caracteres (letras/números/espacios y . , # ( ) -).';
 
-    // Si ya hay errores de forma, devuélvelos todos de una vez
     if (Object.keys(errors).length) {
       return res.status(400).json({ error: 'Validación fallida', errors });
     }
@@ -61,73 +68,207 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 3) Crear visita e inmediatamente emitir 2 QR de un solo uso (ENTRY/EXIT)
-    // ¿Existe visita activa para ese CURP?
-    const existing = await prisma.guestVisit.findFirst({
+    // 3) Buscar visita vigente. "Vigente" = estado OUTSIDE/INSIDE y/o no expirada
+    const activeVisit = await prisma.guestVisit.findFirst({
       where: {
         curp,
         OR: [
           { state: { in: ['OUTSIDE', 'INSIDE'] } },
-          { expiresAt: { gt: new Date() } },
-        ]
+          { expiresAt: { gt: now() } },
+        ],
       },
       include: {
         passes: {
-          where: { status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
-        }
-      }
+          where: { status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: now() } }] },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
     });
 
-    if (existing) {
-      // Si ya tiene QR activos, regrésalos tal cual
-      const entry = existing.passes.find(p => p.kind === 'ENTRY');
-      const exit  = existing.passes.find(p => p.kind === 'EXIT');
+    // Helper para emitir faltantes (o ambos) de forma atómica
+    const emitMissingPasses = async (visit) => {
+      const stillValid = visit.expiresAt && visit.expiresAt > now();
+      const expiresAt  = stillValid ? visit.expiresAt : addMin(now(), TTL_MIN);
+
+      return await prisma.$transaction(async (tx) => {
+        // Si la visita ya venció, actualiza su expiresAt
+        if (!stillValid) {
+          await tx.guestVisit.update({
+            where: { id: visit.id },
+            data:  { expiresAt },
+          });
+        }
+
+        // Busca los activos otra vez dentro de la transacción
+        const current = await tx.qRPass.findMany({
+          where: {
+            guestId: visit.id,
+            status: 'ACTIVE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now() } }],
+          },
+        });
+
+        let entry = current.find(p => p.kind === 'ENTRY');
+        let exit  = current.find(p => p.kind === 'EXIT');
+
+        // Crea los que falten
+        if (!entry) {
+          entry = await tx.qRPass.create({
+            data: { code: rnd(), guestId: visit.id, kind: 'ENTRY', expiresAt },
+          });
+        }
+        if (!exit) {
+          exit = await tx.qRPass.create({
+            data: { code: rnd(), guestId: visit.id, kind: 'EXIT', expiresAt },
+          });
+        }
+
+        return { entry, exit, expiresAt };
+      });
+    };
+
+    if (activeVisit) {
+      // Si hay visita, asegura que tenga ambos QR activos
+      const entry = activeVisit.passes.find(p => p.kind === 'ENTRY') || null;
+      const exit  = activeVisit.passes.find(p => p.kind === 'EXIT')  || null;
+
+      if (entry && exit) {
+        return res.status(200).json({
+          ok: true,
+          reused: true,
+          visitor: {
+            id: activeVisit.id,
+            firstName: activeVisit.firstName,
+            lastNameP: activeVisit.lastNameP,
+            lastNameM: activeVisit.lastNameM,
+            curp: activeVisit.curp,
+            reason: activeVisit.reason,
+            createdAt: activeVisit.createdAt,
+            expiresAt: activeVisit.expiresAt,
+          },
+          passes: {
+            ENTRY: packPass(entry),
+            EXIT:  packPass(exit),
+          },
+        });
+      }
+
+      // Si faltan, emítelos
+      const emitted = await emitMissingPasses(activeVisit);
+
       return res.status(200).json({
         ok: true,
         reused: true,
         visitor: {
-          id: existing.id, firstName: existing.firstName, lastNameP: existing.lastNameP,
-          lastNameM: existing.lastNameM, curp: existing.curp, reason: existing.reason,
-          createdAt: existing.createdAt, expiresAt: existing.expiresAt,
+          id: activeVisit.id,
+          firstName: activeVisit.firstName,
+          lastNameP: activeVisit.lastNameP,
+          lastNameM: activeVisit.lastNameM,
+          curp: activeVisit.curp,
+          reason: activeVisit.reason,
+          createdAt: activeVisit.createdAt,
+          expiresAt: emitted.expiresAt,
         },
         passes: {
-          ENTRY: entry ? { code: entry.code, kind: 'ENTRY', expiresAt: entry.expiresAt, status: entry.status } : null,
-          EXIT:  exit  ? { code: exit.code,  kind: 'EXIT',  expiresAt: exit.expiresAt,  status: exit.status  } : null,
-        }
+          ENTRY: packPass(emitted.entry),
+          EXIT:  packPass(emitted.exit),
+        },
       });
     }
 
-    // Crear TODO dentro de una transacción
+    // 4) No hay visita vigente → crea visita + 2 QR
     const result = await prisma.$transaction(async (tx) => {
       const visit = await tx.guestVisit.create({
         data: {
           firstName, lastNameP, lastNameM, curp, reason,
-          expiresAt: new Date(Date.now() + TTL_MIN * 60 * 1000)
-        }
+          expiresAt: addMin(now(), TTL_MIN),
+          state: 'OUTSIDE', // por si tu enum lo requiere
+        },
       });
-      const expiresAt = visit.expiresAt;
+
       const [entry, exit] = await Promise.all([
-        tx.qRPass.create({ data: { code: crypto.randomBytes(16).toString('hex'), guestId: visit.id, kind: 'ENTRY', expiresAt } }),
-        tx.qRPass.create({ data: { code: crypto.randomBytes(16).toString('hex'), guestId: visit.id, kind: 'EXIT',  expiresAt } }),
+        tx.qRPass.create({ data: { code: rnd(), guestId: visit.id, kind: 'ENTRY', expiresAt: visit.expiresAt } }),
+        tx.qRPass.create({ data: { code: rnd(), guestId: visit.id, kind: 'EXIT',  expiresAt: visit.expiresAt } }),
       ]);
+
       return { visit, entry, exit };
     });
 
     return res.status(201).json({
       ok: true,
       visitor: {
-        id: result.visit.id, firstName: result.visit.firstName, lastNameP: result.visit.lastNameP,
-        lastNameM: result.visit.lastNameM, curp: result.visit.curp, reason: result.visit.reason,
-        createdAt: result.visit.createdAt, expiresAt: result.visit.expiresAt,
+        id: result.visit.id,
+        firstName: result.visit.firstName,
+        lastNameP: result.visit.lastNameP,
+        lastNameM: result.visit.lastNameM,
+        curp: result.visit.curp,
+        reason: result.visit.reason,
+        createdAt: result.visit.createdAt,
+        expiresAt: result.visit.expiresAt,
       },
       passes: {
-        ENTRY: { code: result.entry.code, kind: 'ENTRY', expiresAt: result.entry.expiresAt, status: result.entry.status },
-        EXIT:  { code: result.exit.code,  kind: 'EXIT',  expiresAt: result.exit.expiresAt,  status: result.exit.status  },
-      }
+        ENTRY: packPass(result.entry),
+        EXIT:  packPass(result.exit),
+      },
     });
   } catch (e) {
     console.error('GUEST /register error:', e);
     return res.status(500).json({ error: 'No se pudo registrar la visita' });
+  }
+});
+
+// GET /api/guest/my-active?visitId=123&kind=ENTRY|EXIT
+// Devuelve el QR activo permitido por el estado de la visita.
+// Regla: OUTSIDE -> solo ENTRY,   INSIDE -> solo EXIT,   COMPLETED -> ninguno.
+router.get('/my-active', async (req, res) => {
+  try {
+    const visitId = parseInt(req.query.visitId || '0', 10);
+    const kindRaw = String(req.query.kind || '').toUpperCase();
+    if (!visitId || (kindRaw !== 'ENTRY' && kindRaw !== 'EXIT')) {
+      return res.status(400).json({ error: 'Parámetros inválidos' });
+    }
+
+    const visit = await prisma.guestVisit.findUnique({
+      where: { id: visitId },
+      select: {
+        id: true,
+        state: true,
+        expiresAt: true,
+        passes: {
+          where: {
+            kind: kindRaw,
+            status: 'ACTIVE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          select: { id: true, code: true, kind: true, status: true, expiresAt: true },
+          orderBy: { id: 'desc' },
+          take: 1,
+        }
+      }
+    });
+
+    if (!visit) return res.status(404).json({ error: 'Visita no encontrada' });
+
+    // Gate por estado
+    if (visit.state === 'OUTSIDE' && kindRaw === 'EXIT') {
+      return res.status(400).json({ error: 'Tu QR de salida está deshabilitado. Debes entrar primero.' });
+    }
+    if (visit.state === 'INSIDE' && kindRaw === 'ENTRY') {
+      return res.status(400).json({ error: 'Tu QR de entrada está deshabilitado. Debes salir primero.' });
+    }
+    if (visit.state === 'COMPLETED') {
+      return res.status(400).json({ error: 'La visita ya fue concluida.' });
+    }
+
+    const pass = visit.passes[0] || null;
+    if (!pass) {
+      return res.status(404).json({ error: 'No hay QR vigente de ese tipo.' });
+    }
+
+    return res.json({ pass });
+  } catch (e) {
+    console.error('GUEST /my-active error:', e);
+    res.status(500).json({ error: 'No se pudo consultar el QR activo' });
   }
 });
 

@@ -60,18 +60,18 @@ model User {
 }
 
 model GuestVisit {
-  id         Int        @id @default(autoincrement())
-  firstName  String
-  lastNameP  String
-  lastNameM  String?
-  curp       String
-  reason     String
-  state      GuestState @default(OUTSIDE)
-  createdAt  DateTime   @default(now())
-  expiresAt  DateTime?
+  id        Int        @id @default(autoincrement())
+  firstName String
+  lastNameP String
+  lastNameM String?
+  curp      String
+  reason    String
+  state     GuestState @default(OUTSIDE)
+  createdAt DateTime   @default(now())
+  expiresAt DateTime?
 
-  passes     QRPass[]
-  logs       AccessLog[] @relation("AccessByGuest")
+  passes QRPass[]
+  logs   AccessLog[] @relation("AccessByGuest")
 
   @@index([curp]) // << QUITAR @unique y dejarlo con índice normal
 }
@@ -82,42 +82,37 @@ enum GuestState {
   COMPLETED
 }
 
-
 model QRPass {
-  id        Int       @id @default(autoincrement())
-  code      String    @unique
-  userId    Int?                // <- OPCIONAL
-  user      User?     @relation(fields: [userId], references: [id]) // <- OPCIONAL
+  id        Int         @id @default(autoincrement())
+  code      String      @unique
+  userId    Int?
+  user      User?       @relation(fields: [userId], references: [id])
   guestId   Int?
   guest     GuestVisit? @relation(fields: [guestId], references: [id])
-  kind      QRKind     @default(ENTRY)
-  status    QRStatus   @default(ACTIVE)
+  kind      QRKind
+  status    QRStatus    @default(ACTIVE)
   expiresAt DateTime?
-  createdAt DateTime   @default(now())
-
-  logs AccessLog[]
-
-  @@index([code])
+  createdAt DateTime    @default(now())
+  logs      AccessLog[] @relation("QRPassLogs")
 }
 
 model AccessLog {
-  id       Int   @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  userId   Int?
-  user     User? @relation("AccessByUser", fields: [userId], references: [id])
+  userId Int?
+  user   User? @relation("AccessByUser", fields: [userId], references: [id])
 
-  guestId  Int?
-  guest    GuestVisit? @relation("AccessByGuest", fields: [guestId], references: [id])
+  guestId Int?
+  guest   GuestVisit? @relation("AccessByGuest", fields: [guestId], references: [id])
 
-  qrId     Int?
-  qr       QRPass? @relation(fields: [qrId], references: [id])
+  qrId Int?
+  qr   QRPass? @relation("QRPassLogs", fields: [qrId], references: [id])
 
-  kind     QRKind?
-  action   AccessType
+  kind   QRKind?
+  action AccessType
 
-  guardId  Int?
-  guard    User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
+  guardId Int?
+  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
 
   createdAt DateTime @default(now())
 }
-

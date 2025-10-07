@@ -1,75 +1,150 @@
 // src/components/Navbar.jsx
-import { useLocation, Link, useNavigate } from 'react-router-dom';
-import { useMemo } from 'react';
-
-function baseTitleFor(pathname) {
-  if (pathname === '/register') return 'Registro de datos generales';
-  if (pathname === '/guest/register') return 'Formulario de registro invitado';
-  if (pathname === '/register/confirm' || pathname === '/confirm-register') return 'Confirmar datos';
-  if (pathname === '/guest/confirm' || pathname === '/confirm-guest') return 'Confirmar datos';
-  if (pathname === '/guard-scan') return 'Escaneo de QR (Guardia)';
-  if (pathname === '/admin/users') return 'Administración de usuarios';
-  if (pathname === '/access-report') return 'Reporte de accesos';
-  if (pathname === '/guest/dashboard') return 'Invitado: códigos QR';
-  return '';
-}
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { api } from '../services/api';
+import { useMemo, useEffect, useState } from 'react';
 
 export default function Navbar() {
+  const navigate = useNavigate();
   const location = useLocation();
-  const nav = useNavigate();
 
-  const user = useMemo(() => {
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
+
+  const [guestVisit, setGuestVisit] = useState(null);
+
+  useEffect(() => {
+    const read = () => {
+      try {
+        setGuestVisit(JSON.parse(sessionStorage.getItem('guestVisit') || 'null'));
+      } catch {
+        setGuestVisit(null);
+      }
+    };
+
+    //lee al montar y cada vez que cambia la ruta
+    read();
+  
+    //escucha un evento custom para refrescar sin cambiar de ruta
+    const onUpdate = () => read();
+    window.addEventListener('guestVisitUpdate', onUpdate);
+    return () => {
+      window.removeEventListener('guestVisitUpdate', onUpdate)
+    };
+  }, [location.pathname]);
+
+  const guestName = useMemo(() => {
+    const v = guestVisit?.visitor;
+    if (!v) return null;
+    return [v.firstName, v.lastNameP, v.lastNameM].filter(Boolean).join(' ');
+  }, [guestVisit]);
+
+  const logout = async () => {
     try {
-      return JSON.parse(localStorage.getItem('user') || 'null');
-    } catch {
-      return null;
-    }
-  }, []);
-
-  // Muestra "Bienvenido(a): nombre" en dashboard
-  const pageTitle = useMemo(() => {
-    if (location.pathname === '/dashboard' && user?.name) {
-      return `Bienvenido(a): ${user.name}`;
-    }
-    return baseTitleFor(location.pathname);
-  }, [location.pathname, user]);
-
-  const logout = () => {
-    localStorage.removeItem('token');
+      await api.post('/auth/logout');
+    } catch {}
     localStorage.removeItem('user');
-    nav('/', { replace: true });
+    navigate('/', { replace: true });
   };
 
+const guestExit = () => {
+  try { sessionStorage.removeItem('guestVisit'); } catch {}
+  localStorage.removeItem('user');     // por si acaso
+  setGuestVisit(null);                 // 🔹 actualiza estado del navbar ya
+  window.dispatchEvent(new Event('guestVisitUpdate'));
+  navigate('/', { replace: true });
+  setTimeout(() => window.location.reload(), 50);
+};
+
+
+  // Rutas → títulos
+  const titles = {
+    '/register': 'Registro de datos generales',
+    '/guest/register': 'Registro de invitado',
+    '/confirm-guest': 'Confirmar datos (invitado)',
+    '/confirm-register': 'Confirmar datos',
+    '/dashboard': 'Dashboard',
+    '/guest/dashboard': 'Invitado',
+    '/guard-scan': 'Escaneo',
+  };
+
+  // Detectar si estamos en una pantalla de confirmación
+  const isConfirmScreen = ['/confirm-guest', '/confirm-register'].includes(location.pathname);
+  
+  //color base
+  const navbarColor = isConfirmScreen ? '#005c9f' : '#007be4'; // #005c9f = azul más profundo y serio; puedes probar también '#0066cc' o '#0047B6'
+
+  const title = titles[location.pathname] || '';
+
+  // No mostrar navbar en landing
+  if (location.pathname === '/') return null;
+
+  
+  // ✅ Detectar si estamos en CUALQUIER pantalla de invitado con sesión de invitado cargada
+    const isGuestView = location.pathname.startsWith('/guest') && !!guestVisit;
+
+
   return (
-    <nav className="navbar navbar-dark" style={{ background: '#2c47b6' }}>
-      <div className="container-fluid d-flex align-items-center justify-content-between position-relative">
+  <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
+    <div className="container position-relative">  {/* <- añade position-relative */}
+      <Link className="navbar-brand" to="/">AccESCOM</Link>
 
-        {/* IZQUIERDA */}
-        <Link to={user ? '/dashboard' : '/'} className="navbar-brand m-0 text-white">
-          AccESCOM
-        </Link>
+      <div className="collapse navbar-collapse show">
+        {/* Centro */}
+        <div
+          className="navbar-nav w-100 text-center justify-content-center align-items-center position-absolute start-0 end-0"
+          style={{pointerEvents: 'none' }}
+        >
+          {isGuestView ? (
+            <span className="navbar-text fw-semibold text-white">
+              Bienvenido(a), {guestName || 'Invitado'}
+            </span>
+          ) : (
+            <div className="d-flex flex-column align-items-center w-100">
+              <span
+                className="navbar-text fw-semibold text-white"
+                style={{ fontSize: '1.05rem', lineHeight: 1 }}
+              >
+                {title}
+              </span>
 
-        {/* CENTRO ABSOLUTO → siempre centrado visualmente */}
-        {pageTitle && (
-          <div
-            className="position-absolute top-50 start-50 translate-middle text-white fw-semibold text-center"
-            style={{ transform: 'translate(-50%, -50%)' }}
-          >
-            {pageTitle}
-          </div>
-        )}
+              {isConfirmScreen && (
+                <small
+                  className="fw-bold text-white"
+                  style={{
+                    fontSize: '0.9rem',
+                    opacity: 0.95,
+                    marginTop: '2px',
+                  }}
+                >
+                  Verifica que tus datos sean correctos
+                </small>
+              )}
+            </div>
+          )}
+        </div>
 
-        {/* DERECHA */}
-        {user && (
-          <button
-            type="button"
-            className="btn btn-outline-light btn-sm"
-            onClick={logout}
-          >
-            Cerrar sesión
-          </button>
-        )}
+        {/* Derecha */}
+        <ul className="navbar-nav ms-auto">
+          {isGuestView ? (
+            <li className="nav-item">
+              <button className="btn btn-outline-light btn-sm" onClick={guestExit}>
+                Salir
+              </button>
+            </li>
+          ) : user ? (
+            <>
+              <li className="nav-item me-2">
+                <span className="navbar-text">Bienvenido(a), {user.name}</span>
+              </li>
+              <li className="nav-item">
+                <button className="btn btn-outline-light btn-sm" onClick={logout}>
+                  Cerrar sesión
+                </button>
+              </li>
+            </>
+          ) : null}
+        </ul>
       </div>
-    </nav>
-  );
+    </div>
+  </nav>
+);
 }

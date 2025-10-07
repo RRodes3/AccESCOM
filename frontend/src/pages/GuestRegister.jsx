@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../services/api'; // Asegúrate de importar tu instancia de API
 
 const RE_LETTERS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 const RE_CURP    = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/i;
-
 const minLen = (s, n) => (s || '').trim().length >= n;
 
 export default function GuestRegister() {
@@ -23,7 +21,7 @@ export default function GuestRegister() {
       ...f,
       [name]: name === 'curp'
         ? value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18)
-        : value
+        : value,
     }));
   };
 
@@ -39,7 +37,7 @@ export default function GuestRegister() {
     return e;
   };
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault();
     setTopMsg('');
     const eobj = validate(form);
@@ -49,32 +47,11 @@ export default function GuestRegister() {
       setTopMsg('Revisa los campos marcados.');
       return;
     }
+    if (sending) return;
+    setSending(true);
 
-    try {
-      const payload = {
-        firstName: form.firstName.trim(),
-        lastNameP: form.lastNameP.trim(),
-        lastNameM: form.lastNameM.trim() || null,
-        curp: form.curp.trim().toUpperCase(),
-        reason: form.reason.trim(),
-      };
-
-      const { data } = await api.post('/guest/register', payload);
-      // data = { ok, visitor, passes: { ENTRY:{...}, EXIT:{...} } }
-
-      // Persistimos para que el dashboard pueda leerlo
-      sessionStorage.setItem('guestVisit', JSON.stringify({
-        visitor: data?.visitor || null,
-        passes: data?.passes || null,
-      }));
-
-      // Redirige directo al dashboard de invitado
-      nav('/guest/dashboard', { replace: true });
-    } catch (err) {
-      const server = err?.response?.data;
-      setTopMsg(server?.error || 'No se pudo registrar al invitado.');
-      if (server?.errors) setErrors(server.errors);
-    }
+    // 👉 SOLO navegamos a confirmar con los datos (sin guardar nada aún)
+    nav('/confirm-guest', { state: { form } });
   };
 
   const FieldError = ({ name }) =>
@@ -113,7 +90,7 @@ export default function GuestRegister() {
         <div className="d-flex gap-2 mt-3">
           <Link to="/" className="btn btn-outline-light flex-fill">Regresar</Link>
           <button className="btn btn-primary flex-fill" disabled={sending}>
-            {sending ? 'Enviando…' : 'Continuar'}
+            {sending ? 'Continuando…' : 'Continuar'}
           </button>
         </div>
       </form>
