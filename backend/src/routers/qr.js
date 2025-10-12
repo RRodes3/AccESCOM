@@ -187,9 +187,7 @@ router.get('/my-active', auth, requireRole(['USER','ADMIN']), async (req, res) =
 });
 
 /**
- * POST /api/qr/validate   (GUARD/ADMIN)
- * body: { code }
- * (Opcional) coherencia con estado de acceso del usuario
+ * POST /api/qr/validate
  */
 router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   try {
@@ -203,6 +201,20 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
     });
     if (!pass) return res.status(404).json({ ok:false, reason:'QR no encontrado' });
 
+    if (pass.status !== 'ACTIVE') {
+      await prisma.accessLog.create({
+        data: {
+          userId:  pass.userId || null,
+          guestId: pass.guestId || null,
+          qrId:    pass.id,
+          kind:    pass.kind,
+          action:  'VALIDATE_DENY',
+          guardId: req.user.id
+        }
+      });
+      return res.status(400).json({ ok:false, reason:'QR ya usado o revocado' });
+    }
+
     // expiración
     if (pass.expiresAt && pass.expiresAt <= new Date()) {
       await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'EXPIRED' } });
@@ -210,6 +222,7 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         data: {
           userId:  pass.userId || null,
           guestId: pass.guestId || null,
+          qrId:    pass.id,
           kind:    pass.kind,
           action:  'VALIDATE_DENY',
           guardId: req.user.id
@@ -232,7 +245,13 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         data: { accessState: u.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE' }
       });
       await prisma.accessLog.create({
-        data: { userId: u.id, kind: pass.kind, action: 'VALIDATE_ALLOW', guardId: req.user.id }
+        data: { 
+          userId: u.id,
+          qrId: pass.id,
+          kind: pass.kind,
+          action: 'VALIDATE_ALLOW',
+          guardId: req.user.id 
+        }
       });
 
       const owner = {
@@ -355,30 +374,34 @@ router.post('/ensure-both', auth, requireRole(['USER','ADMIN']), async (req, res
 
 
 /**
- * C) GET /api/qr/logs?take=50&skip=0  (ADMIN)
+ * C) GET /api/qr/logs (ADMIN)
  */
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
     const take = Math.min(parseInt(req.query.take || '50', 10), 200);
     const skip = parseInt(req.query.skip || '0', 10);
+
     const [items, total] = await Promise.all([
       prisma.accessLog.findMany({
         take, skip,
         orderBy: { createdAt: 'desc' },
         include: {
-          user:  { select: { name: true, email: true, boleta: true } },
+          user:  { select: { name: true, firstName: true, lastNameP: true, lastNameM: true, boleta: true, email: true, role: true } },
+          guest: { select: { firstName: true, lastNameP: true, lastNameM: true, curp: true, reason: true } },
           guard: { select: { name: true, email: true } },
           qr:    { select: { code: true, kind: true } }
         }
       }),
       prisma.accessLog.count()
     ]);
+
     res.json({ items, total });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudieron obtener los logs' });
   }
 });
+
 
 /**
  * D) GET /api/qr/stats  (ADMIN)

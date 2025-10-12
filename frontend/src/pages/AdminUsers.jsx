@@ -1,5 +1,6 @@
 // frontend/src/pages/AdminUsers.jsx
 import { useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 import {
   listUsers,
   createUser,
@@ -35,6 +36,8 @@ export default function AdminUsers() {
   const [take]  = useState(20);
   const [skip, setSkip]   = useState(0);
   const [loading, setLoading] = useState(false);
+  const [guests, setGuests] = useState([]);
+  const [gTotal, setGTotal] = useState(0);
 
   // --- Validación rápida del cliente ---
   const validate = (f) => {
@@ -65,6 +68,14 @@ export default function AdminUsers() {
     }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [query, role, skip, includeInactive]);
+  useEffect(() => {
+    api.get('/admin/guests?take=100&skip=0')
+      .then(({ data }) => {
+        setGuests(data.items || []);
+        setGTotal(data.total || 0);
+      })
+      .catch(() => {});
+  }, []);
 
   // --- Handlers ---
   const onChange = (e) => {
@@ -308,6 +319,39 @@ export default function AdminUsers() {
           </button>
         </div>
       </form>
+
+      {/* ...formulario de alta de usuario... */}
+
+      <h5 className="mt-4">Invitados ({gTotal})</h5>
+        <div className="table-responsive">
+          <table className="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>CURP</th>
+                <th>Motivo</th>
+                <th>Estado</th>
+                <th>Creado</th>
+                <th>Expira</th>
+              </tr>
+            </thead>
+            <tbody>
+              {guests.map(g => (
+                <tr key={g.id}>
+                  <td>{[g.firstName, g.lastNameP, g.lastNameM].filter(Boolean).join(' ')}</td>
+                  <td>{g.curp}</td>
+                  <td>{g.reason}</td>
+                  <td>{g.state}</td>
+                  <td>{new Date(g.createdAt).toLocaleString()}</td>
+                  <td>{g.expiresAt ? new Date(g.expiresAt).toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+              {guests.length === 0 && (
+                <tr><td colSpan="6" className="text-center text-muted">Sin invitados</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="container mt-3">
-      <h3>Panel de Administración</h3>
+      <h3>Panel de Administración (Dashboard) </h3>
       {msg && <div className="alert alert-danger">{msg}</div>}
       {!stats ? <p>Cargando…</p> : (
         <div className="row g-3">

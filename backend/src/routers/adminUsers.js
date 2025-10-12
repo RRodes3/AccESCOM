@@ -114,6 +114,33 @@ router.get('/users', auth, requireRole(['ADMIN']), async (req, res) => {
   }
 });
 
+// GET /api/admin/guests (solo ADMIN)
+router.get('/guests', auth, requireRole(['ADMIN']), async (req, res) => {
+  try {
+    const take = Math.min(parseInt(req.query.take || '50', 10), 200);
+    const skip = parseInt(req.query.skip || '0', 10);
+
+    const [items, total] = await Promise.all([
+      prisma.guestVisit.findMany({
+        orderBy: { createdAt: 'desc' },
+        take, skip,
+        select: {
+          id: true, firstName: true, lastNameP: true, lastNameM: true,
+          curp: true, reason: true, state: true, createdAt: true, expiresAt: true,
+        }
+      }),
+      prisma.guestVisit.count()
+    ]);
+
+    res.json({ items, total });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo obtener invitados' });
+  }
+});
+
+
+
 // PATCH /api/admin/users/:id/deactivate  (solo ADMIN)
 router.patch('/users/:id/deactivate', auth, requireRole(['ADMIN']), async (req, res) => {
   try {

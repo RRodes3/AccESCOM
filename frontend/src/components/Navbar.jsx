@@ -6,9 +6,7 @@ import { useMemo, useEffect, useState } from 'react';
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-
   const user = JSON.parse(localStorage.getItem('user') || 'null');
-
   const [guestVisit, setGuestVisit] = useState(null);
 
   useEffect(() => {
@@ -19,16 +17,10 @@ export default function Navbar() {
         setGuestVisit(null);
       }
     };
-
-    //lee al montar y cada vez que cambia la ruta
     read();
-  
-    //escucha un evento custom para refrescar sin cambiar de ruta
     const onUpdate = () => read();
     window.addEventListener('guestVisitUpdate', onUpdate);
-    return () => {
-      window.removeEventListener('guestVisitUpdate', onUpdate)
-    };
+    return () => window.removeEventListener('guestVisitUpdate', onUpdate);
   }, [location.pathname]);
 
   const guestName = useMemo(() => {
@@ -38,60 +30,52 @@ export default function Navbar() {
   }, [guestVisit]);
 
   const logout = async () => {
-    try {
-      await api.post('/auth/logout');
-    } catch {}
+    try { await api.post('/auth/logout'); } catch {}
     localStorage.removeItem('user');
     navigate('/', { replace: true });
   };
 
-const guestExit = () => {
-  try { sessionStorage.removeItem('guestVisit'); } catch {}
-  localStorage.removeItem('user');     // por si acaso
-  setGuestVisit(null);                 // 🔹 actualiza estado del navbar ya
-  window.dispatchEvent(new Event('guestVisitUpdate'));
-  navigate('/', { replace: true });
-  setTimeout(() => window.location.reload(), 50);
-};
+  const guestExit = () => {
+    sessionStorage.removeItem('guestVisit');
+    window.dispatchEvent(new Event('guestVisitUpdate'));
+    navigate('/', { replace: true });
+  };
 
-
-  // Rutas → títulos
   const titles = {
     '/register': 'Registro de datos generales',
     '/guest/register': 'Registro de invitado',
     '/confirm-guest': 'Confirmar datos (invitado)',
     '/confirm-register': 'Confirmar datos',
-    '/dashboard': 'Dashboard',
     '/guest/dashboard': 'Invitado',
     '/guard-scan': 'Escaneo',
   };
 
-  // Detectar si estamos en una pantalla de confirmación
   const isConfirmScreen = ['/confirm-guest', '/confirm-register'].includes(location.pathname);
-  
-  //color base
-  const navbarColor = isConfirmScreen ? '#005c9f' : '#007be4'; // #005c9f = azul más profundo y serio; puedes probar también '#0066cc' o '#0047B6'
-
+  const navbarColor = isConfirmScreen ? '#005c9f' : '#007be4';
   const title = titles[location.pathname] || '';
 
-  // No mostrar navbar en landing
   if (location.pathname === '/') return null;
 
-  
-  // ✅ Detectar si estamos en CUALQUIER pantalla de invitado con sesión de invitado cargada
-    const isGuestView = location.pathname.startsWith('/guest') && !!guestVisit;
+  const isGuestView = location.pathname.startsWith('/guest') && !!guestVisit;
 
+  // 🔹 Navbar del ADMIN sin "Generar QR" ni "Escaneo"
+  const isAdmin = user?.role === 'ADMIN';
+  const adminLinks = [
+    { path: '/dashboard', label: 'Dashboard' },
+    { path: '/admin/users', label: 'Usuarios' },
+    { path: '/access-report', label: 'Reportes' },
+  ];
 
   return (
-  <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
-    <div className="container position-relative">  {/* <- añade position-relative */}
-      <Link className="navbar-brand" to="/">AccESCOM</Link>
+    <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
+      <div className="container position-relative">
+        {/* Izquierda */}
+        <Link className="navbar-brand" to="/">AccESCOM</Link>
 
-      <div className="collapse navbar-collapse show">
         {/* Centro */}
         <div
           className="navbar-nav w-100 text-center justify-content-center align-items-center position-absolute start-0 end-0"
-          style={{pointerEvents: 'none' }}
+          style={{ pointerEvents: 'none' }}
         >
           {isGuestView ? (
             <span className="navbar-text fw-semibold text-white">
@@ -109,11 +93,7 @@ const guestExit = () => {
               {isConfirmScreen && (
                 <small
                   className="fw-bold text-white"
-                  style={{
-                    fontSize: '0.9rem',
-                    opacity: 0.95,
-                    marginTop: '2px',
-                  }}
+                  style={{ fontSize: '0.9rem', opacity: 0.95, marginTop: '2px' }}
                 >
                   Verifica que tus datos sean correctos
                 </small>
@@ -123,7 +103,20 @@ const guestExit = () => {
         </div>
 
         {/* Derecha */}
-        <ul className="navbar-nav ms-auto">
+        <ul className="navbar-nav ms-auto align-items-center gap-2">
+          {isAdmin &&
+            adminLinks.map((link) => (
+              <li key={link.path} className="nav-item">
+                <Link
+                  to={link.path}
+                  className="btn btn-sm btn-outline-light"
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+
           {isGuestView ? (
             <li className="nav-item">
               <button className="btn btn-outline-light btn-sm" onClick={guestExit}>
@@ -133,7 +126,7 @@ const guestExit = () => {
           ) : user ? (
             <>
               <li className="nav-item me-2">
-                <span className="navbar-text">Bienvenido(a), {user.name}</span>
+                <span className="navbar-text text-white">Bienvenido(a), {user.name}</span>
               </li>
               <li className="nav-item">
                 <button className="btn btn-outline-light btn-sm" onClick={logout}>
@@ -144,7 +137,6 @@ const guestExit = () => {
           ) : null}
         </ul>
       </div>
-    </div>
-  </nav>
-);
+    </nav>
+  );
 }

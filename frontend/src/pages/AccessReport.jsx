@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 
+const roleEs = (r) => ({
+  ADMIN: 'Administrador',
+  USER: 'Usuario institucional',
+  GUARD: 'Guardia',
+  GUEST: 'Invitado'
+}[r] || r);
+
 export default function AccessReport() {
   const [rows, setRows] = useState([]);
   const [msg, setMsg] = useState('');
@@ -52,24 +59,63 @@ export default function AccessReport() {
           <thead>
             <tr>
               <th>Fecha</th>
+              <th>Tipo</th>
               <th>Acción</th>
-              <th>Usuario</th>
+              <th>Dueño QR</th>
+              <th>Identificadores</th>
               <th>Guardia</th>
-              <th>QR</th>
+              <th>Boleta</th>
+              <th>Email</th>
+              <th>CURP</th>
+              <th>Motivo Visita</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r.id}>
-                <td>{new Date(r.createdAt).toLocaleString()}</td>
-                <td>{r.action}</td>
-                <td>{r.user?.name} <small className="text-muted d-block">{r.user?.email}</small></td>
-                <td>{r.guard?.name || '—'} <small className="text-muted d-block">{r.guard?.email || ''}</small></td>
-                <td><small className="text-muted">{r.qr?.code?.slice(0,10) || '—'}</small></td>
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const isGuest = !!row.guest;
+              const fullName = isGuest
+                ? [row.guest.firstName, row.guest.lastNameP, row.guest.lastNameM].filter(Boolean).join(' ')
+                : [row.user?.firstName, row.user?.lastNameP, row.user?.lastNameM].filter(Boolean).join(' ') || row.user?.name;
+
+              const rol = isGuest ? 'Invitado'
+                : row.user?.role === 'USER' ? 'Usuario institucional'
+                : row.user?.role === 'ADMIN' ? 'Administrador'
+                : row.user?.role === 'GUARD' ? 'Guardia'
+                : row.user?.role || '—';
+
+              return (
+                <tr key={row.id}>
+                  <td>{new Date(row.createdAt).toLocaleString()}</td>
+                  <td>{row.qr?.kind === 'ENTRY' ? 'Entrada' : (row.qr?.kind === 'EXIT' ? 'Salida' : '—')}</td>
+                  <td>{row.action === 'VALIDATE_ALLOW' ? 'Permitido' : (row.action === 'VALIDATE_DENY' ? 'Denegado' : row.action)}</td>
+                  <td>
+                    {fullName || '—'}
+                    <div className="text-muted" style={{fontSize:'0.85em'}}>{rol}</div>
+                  </td>
+                  <td>
+                    {isGuest ? (
+                      <>
+                        <div><b>CURP:</b> {row.guest.curp}</div>
+                        <div><b>Motivo:</b> {row.guest.reason}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div><b>Boleta:</b> {row.user?.boleta || '—'}</div>
+                        <div><b>Email:</b> {row.user?.email || '—'}</div>
+                      </>
+                    )}
+                  </td>
+                  <td>{row.guard?.name || '—'}</td>
+                  {/* Tus nuevas columnas */}
+                  <td>{isGuest ? '—' : (row.user?.boleta || '—')}</td>
+                  <td>{isGuest ? '—' : (row.user?.email || '—')}</td>
+                  <td>{isGuest ? (row.guest.curp || '—') : '—'}</td>
+                  <td>{isGuest ? (row.guest.reason || '—') : '—'}</td>
+                </tr>
+              );
+            })}
             {!rows.length && (
-              <tr><td colSpan={5} className="text-center text-muted">Sin registros</td></tr>
+              <tr><td colSpan={10} className="text-center text-muted">Sin registros</td></tr>
             )}
           </tbody>
         </table>

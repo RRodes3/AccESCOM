@@ -3,15 +3,14 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
-// Tono corto alto (ok) o grave (denegado)
+/* ---------- beep corto OK/FAIL ---------- */
 function playFeedback(ok) {
-  // Web Audio: tono corto alto (ok) o grave (denegado)
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   const ctx = new AudioCtx();
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = 'sine';
-  o.frequency.value = ok ? 880 : 220; // Hz
+  o.frequency.value = ok ? 880 : 220;
   g.gain.setValueAtTime(0.0001, ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
   g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
@@ -20,16 +19,15 @@ function playFeedback(ok) {
   o.stop(ctx.currentTime + 0.28);
 }
 
-
-
-/** Tarjeta de resultado (autorizado/denegado) */
+/* ---------- Tarjeta de resultado ---------- */
 function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   const approved = ok === true;
-
-  // Mapea roles para mostrar
-  const roleLabel = { ADMIN: 'Administrador', USER: 'Alumno', GUARD: 'Guardia' };
-
-  // Encabezado según tipo y resultado de QR
+  const roleLabel = { 
+    ADMIN: 'Administrador',
+    USER: 'Usuario institucional',
+    GUARD: 'Guardia',
+    GUEST: 'Invitado'
+  };
   const heading = approved
     ? (kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido')
     : (kind === 'EXIT' ? 'Salida denegada' : 'Acceso denegado');
@@ -43,14 +41,26 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
         {approved ? (
           <>
-            <p className="mb-1"><b>Usuario:</b> {roleLabel[owner?.role] || owner?.role || '—'}</p>
+            <p className="mb-1"><b>Tipo:</b> {roleLabel[owner?.role] || '—'}</p>
+
             <p className="mb-1">
               <b>Nombre:</b>{' '}
-              {[owner?.firstName, owner?.lastNameP, owner?.lastNameM].filter(Boolean).join(' ')
-               || owner?.name || '—'}
+              {[owner?.firstName, owner?.lastNameP, owner?.lastNameM]
+                .filter(Boolean)
+                .join(' ') || owner?.name || '—'}
             </p>
-            <p className="mb-1"><b>No. boleta:</b> {owner?.boleta || '—'}</p>
-            <p className="mb-1"><b>Email:</b> {owner?.email || '—'}</p>
+
+            {owner?.role === 'GUEST' ? (
+              <>
+                <p className="mb-1"><b>CURP:</b> {owner?.curp || '—'}</p>
+                <p className="mb-1"><b>Motivo visita:</b> {owner?.reason || '—'}</p>
+              </>
+            ) : (
+              <>
+                <p className="mb-1"><b>No. boleta:</b> {owner?.boleta || '—'}</p>
+                <p className="mb-1"><b>Email:</b> {owner?.email || '—'}</p>
+              </>
+            )}
 
             <div className="d-flex justify-content-center mt-3">
               <div
@@ -67,18 +77,15 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
           </>
         ) : (
           <div style={{ whiteSpace: 'pre-line' }}>
-            <p className="mb-0">
-              {reason || 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.'}
-            </p>
+            <p className="mb-0">{reason || 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.'}</p>
             <p className="mt-3 mb-0">Última opción: registro manual.</p>
           </div>
         )}
       </div>
 
-      {/* Botones */}
       <div className="d-grid gap-2 mt-4">
         <button type="button" className="btn btn-primary btn-lg" onClick={onScanAgain}>
-          Escanear nuevo código QR
+          Escanear nuevo código
         </button>
         <button type="button" className="btn btn-outline-primary" onClick={onBack}>
           Regresar al menú
@@ -88,43 +95,86 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   );
 }
 
-
-/** Página de escaneo de QR (guardia) */
+/* ---------- Página de escaneo ---------- */
 export default function GuardScan() {
   const regionId = 'reader';
-  const scannerRef   = useRef(null);    // instancia Html5Qrcode
-  const startingRef  = useRef(false);   // evita start() concurrente
-  const startedRef   = useRef(false);   // sabemos si está corriendo
-  const [msg, setMsg] = useState('');
-  const [running, setRunning] = useState(false);
-
-  // resultado del backend -> { ok: boolean, owner?: {...}, reason?: string }
-  const [result, setResult] = useState(null);
   const navigate = useNavigate();
 
+  // Modo: 'reader' (lector USB HID) | 'camera' (webcam)
+  const [mode, setMode] = useState('reader');
+
+  // html5-qrcode refs
+  const scannerRef  = useRef(null);
+  const startingRef = useRef(false);
+  const startedRef  = useRef(false);
+
+  const [running, setRunning] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [result, setResult] = useState(null);
+
+  /* ---------- util ---------- */
   const clearContainer = () => {
     const el = document.getElementById(regionId);
     if (el) el.innerHTML = '';
   };
 
+  const hardStopCamera = (regionSelector = `#${regionId}`) => {
+    const scoped = document.querySelectorAll(`${regionSelector} video`);
+    const all = scoped.length ? scoped : document.querySelectorAll('video');
+    all.forEach(v => {
+      try {
+        const src = v.srcObject;
+        if (src && typeof src.getTracks === 'function') {
+          src.getTracks().forEach(t => { try { t.stop(); } catch {} });
+        }
+        v.srcObject = null;
+        v.removeAttribute('src');
+        v.load?.();
+      } catch {}
+    });
+  };
+
+  /* ---------- validación común (para ambos modos) ---------- */
+  const handleCode = useCallback(async (code) => {
+    setMsg('Validando…');
+
+    // si veníamos de cámara, pausamos y/o detenemos
+    if (startedRef.current) {
+      try { await scannerRef.current?.pause?.(); } catch {}
+    }
+
+    try {
+      const { data } = await api.post('/qr/validate', { code });
+      playFeedback(!!data.ok);
+      setResult({ ok: data.ok, kind: data.pass?.kind, owner: data.owner, reason: data.reason });
+    } catch (e) {
+      playFeedback(false);
+      setResult({ ok: false, reason: e?.response?.data?.reason || 'Error validando' });
+    } finally {
+      setMsg('');
+      // detenemos completamente la cámara si estaba activa
+      if (startedRef.current) await stopScanner();
+    }
+  }, []); // eslint-disable-line
+
+  /* ---------- Cámara ---------- */
   const stopScanner = useCallback(async () => {
-    if (!startedRef.current || !scannerRef.current){
-    // aunque “creamos” que no está corriendo, intenta apagar cualquier stream
-    hardStopCamera(`#${regionId}`);
-    return;}
+    if (!startedRef.current || !scannerRef.current) {
+      hardStopCamera();
+      setRunning(false);
+      return;
+    }
     const scanner = scannerRef.current;
     try {
-      await scanner.stop().catch(() => {});   // apaga cámara (best effort)
-      await scanner.clear().catch(() => {});  // limpia DOM
+      await scanner.stop().catch(() => {});
+      await scanner.clear().catch(() => {});
     } catch {
       clearContainer();
     } finally {
-      // Fallback duro: por si el stop() no logró cortar los tracks
-      hardStopCamera(`#${regionId}`);
+      hardStopCamera();
+      scannerRef.current = null;
       startedRef.current = false;
       setRunning(false);
-      scannerRef.current = null; // fuerza nueva creación en próximo start
-      setMsg(''); // no mostrar alertas mientras está detenido
     }
   }, []);
 
@@ -132,11 +182,12 @@ export default function GuardScan() {
     if (startingRef.current || startedRef.current) return;
     startingRef.current = true;
     try {
-      setMsg(''); // limpia mensajes previos
+      setMsg('');
       if (!scannerRef.current) scannerRef.current = new Html5Qrcode(regionId);
       else clearContainer();
-      // Por si quedó un stream “huérfano” de un intento previo
-      hardStopCamera(`#${regionId}`);
+
+      // asegurar que no hay streams huérfanos
+      hardStopCamera();
 
       const scanner = scannerRef.current;
       const config = { fps: 10, qrbox: { width: 260, height: 260 } };
@@ -144,66 +195,88 @@ export default function GuardScan() {
       await scanner.start(
         { facingMode: 'environment' },
         config,
-        async (text) => {
-          setMsg('Validando…');
-          try {
-            // Pausa para evitar lecturas repetidas durante la validación
-            await scanner.pause();
-
-            const { data } = await api.post('/qr/validate', { code: text });
-            playFeedback(!!data.ok);                // ← beep "positivo"
-            // Guardamos resultado; NO reanudamos: mostramos pantalla de resultado
-            setResult({ ok: data.ok, kind: data.pass?.kind, owner: data.owner, reason: data.reason });
-          } catch (e) {
-            playFeedback(false);                    // ← beep "negativo"
-            setResult({
-              ok: false,
-              reason: e?.response?.data?.reason || 'Error validando',
-            });
-          } finally {
-            setMsg(''); // limpia mensaje de validando
-            // detén la cámara al terminar el ciclo de validación y mostrar pantalla
-            await stopScanner(); // esto también ejecuta el hardStop
-          }
-        },
-        () => { /* errores de escaneo ignorados */ }
+        async (text) => { await handleCode(text); },
+        () => {}
       );
 
       startedRef.current = true;
       setRunning(true);
-      setMsg(''); //asegurar que no quede mensaje
+      setMsg('');
     } catch (err) {
       console.error('Error start scanner:', err);
       setMsg('No se pudo iniciar la cámara');
       try { await scannerRef.current?.clear?.(); } catch {}
-      hardStopCamera(`#${regionId}`);
+      hardStopCamera();
       scannerRef.current = null;
     } finally {
       startingRef.current = false;
     }
+  }, [handleCode]);
+
+  // Montaje / cambio de modo: enciende/apaga cámara según corresponda
+  useEffect(() => {
+    if (mode === 'camera') {
+      clearContainer();
+      startScanner();
+    } else {
+      // lector
+      stopScanner();
+      clearContainer();
+    }
+    return () => {};
+  }, [mode, startScanner, stopScanner]);
+
+  useEffect(() => {
+    return () => { stopScanner(); hardStopCamera(); };
   }, [stopScanner]);
 
-  // Montaje: arranca al entrar
+  /* ---------- Lector USB (HID) ---------- */
   useEffect(() => {
-    clearContainer();
-    startScanner();
-    return () => { stopScanner(); 
-    hardStopCamera(`#${regionId}`);
+    if (mode !== 'reader') return;
+
+    let timer = null;
+    let buf = '';
+
+    const flushIfAny = () => {
+      const code = buf.trim();
+      buf = '';
+      if (code) handleCode(code);
     };
-  }, [startScanner, stopScanner]);
 
-  // Botones de la tarjeta
+    const onKeyDown = (e) => {
+      // Evita capturar si hay un input activo
+      const a = document.activeElement;
+      const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      if (typing) return;
+
+      // Reinicia timeout de inactividad entre teclas
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { flushIfAny(); }, 120);
+
+      if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+        flushIfAny();
+      } else if (e.key.length === 1) {
+        buf += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      if (timer) clearTimeout(timer);
+    };
+  }, [mode, handleCode]);
+
+  /* ---------- Handlers de UI ---------- */
   const handleScanAgain = () => {
-    setMsg(''); // limpia cualquier alerta previa
     setResult(null);
-    setTimeout(() => { startScanner(); }, 0);
+    setMsg('');
+    if (mode === 'camera') startScanner();
   };
 
-  const handleBack = () => {
-    navigate('/dashboard');
-  };
+  const handleBack = () => navigate('/dashboard');
 
-  // Si hay resultado, mostramos la tarjeta en lugar del visor
+  /* ---------- UI ---------- */
   if (result) {
     return (
       <ScanResultCard
@@ -217,38 +290,62 @@ export default function GuardScan() {
     );
   }
 
-  // Vista normal (lector + estado)
   return (
-    <div className="container mt-3" style={{ maxWidth: 520 }}>
+    <div className="container mt-3" style={{ maxWidth: 560 }}>
       <div className="d-flex align-items-center justify-content-between">
-        <h4>Escaneo de QR (Guardia)</h4>
-        <div>
-          {!running ? (
-            <button className="btn btn-success btn-sm" onClick={startScanner}>
-              Iniciar escaneo
-            </button>
-          ) : (
-            <button className="btn btn-danger btn-sm" onClick={stopScanner}>
-              Detener escaneo
-            </button>
-          )}
+        <h4>Escaneo (Guardia)</h4>
+
+        {/* Selector de modo */}
+        <div className="btn-group">
+          <button
+            className={`btn btn-sm ${mode === 'reader' ? 'btn-primary' : 'btn-outline-primary'}`}
+            onClick={() => setMode('reader')}
+            title="Usar lector USB (HID)"
+          >
+            Usar lector
+          </button>
+          <button
+            className={`btn btn-sm ${mode === 'camera' ? 'btn-primary' : 'btn-outline-primary'}`}
+            onClick={() => setMode('camera')}
+            title="Usar cámara del dispositivo"
+          >
+            Escanear con cámara
+          </button>
         </div>
       </div>
 
-      <div
-        id={regionId}
-        style={{ background: '#0f0f0f', borderRadius: 8, padding: 8 }}
-        className="mt-2"
-      />
+      {/* Contenedor de cámara (solo visible en modo cámara) */}
+      {mode === 'camera' && (
+        <>
+          <div
+            id={regionId}
+            style={{ background: '#0f0f0f', borderRadius: 8, padding: 8 }}
+            className="mt-2"
+          />
+          <div className="mt-2">
+            {!running ? (
+              <button className="btn btn-success btn-sm me-2" onClick={startScanner}>
+                Iniciar escaneo
+              </button>
+            ) : (
+              <button className="btn btn-danger btn-sm me-2" onClick={stopScanner}>
+                Detener escaneo
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
-      {/* Cuando no está corriendo, muestra “Regresar al menú” */}
-      {!running && (
+      {/* Indicador en modo lector */}
+      {mode === 'reader' && (
+        <div className="alert alert-info mt-3 mb-0">
+          <b>Lector listo:</b> acerca el QR al escáner (HID). Acepta terminadores CR/LF o timeout.
+        </div>
+      )}
+
+      {!running && mode === 'camera' && (
         <div className="mt-3 d-flex justify-content-end">
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => navigate('/dashboard')}
-          >
+          <button type="button" className="btn btn-outline-secondary" onClick={handleBack}>
             Regresar al menú
           </button>
         </div>
@@ -257,24 +354,4 @@ export default function GuardScan() {
       {msg && <div className="alert alert-warning mt-3">{msg}</div>}
     </div>
   );
-  // Mata cualquier stream activo (fallback por si html5-qrcode no libera bien)
-  function hardStopCamera(regionSelector = '#reader') {
-    // primero intenta en el contenedor del lector
-    const scoped = document.querySelectorAll(`${regionSelector} video`);
-    const all = scoped.length ? scoped : document.querySelectorAll('video');
-    all.forEach(v => {
-      try {
-        const src = v.srcObject;
-        if (src && typeof src.getTracks === 'function') {
-          src.getTracks().forEach(t => {
-            try { t.stop(); } catch {}
-          });
-        }
-        v.srcObject = null;
-        v.removeAttribute('src'); // Safari/Firefox a veces lo agradecen
-        v.load?.();
-      } catch {}
-    });
-  }
-
 }
