@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../services/api';
 
 export default function Login() {
@@ -42,6 +42,16 @@ export default function Login() {
           placeholder="Contraseña"
         />
         <button className="btn btn-primary w-100">Entrar</button>
+
+        <div className="text-center mt-2">
+          <Link
+            to="/forgot-password"
+            className="text-decoration-none"
+            style={{ color: '#0d6efd', fontWeight: '500' }}
+          >
+            ¿Olvidaste tu contraseña? Presiona aquí
+          </Link>
+        </div>
       </form>
       {msg && <div className="alert alert-danger mt-3">{msg}</div>}
     </div>

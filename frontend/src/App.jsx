@@ -19,6 +19,8 @@ import GenerateQR from './pages/GenerateQR.jsx';
 import GuardScan from './pages/GuardScan.jsx';
 import AccessReport from './pages/AccessReport.jsx';
 import GuestDashboard from './pages/dashboards/GuestDashboard.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 
 
 function AppLayout() {
@@ -36,6 +38,8 @@ function AppLayout() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/guest/register" element={<GuestRegister />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/guest/dashboard" element={<GuestDashboard />} />
           <Route path="/register/confirm" element={<ConfirmRegister />} />
            {/*--  <Route path="/guest/confirm" element={<ConfirmGuest />} />  --*/}

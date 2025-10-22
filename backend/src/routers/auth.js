@@ -2,6 +2,8 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const auth = require('../middleware/auth');        // ajusta ruta si difiere
 const { cookieOptions } = require('../utils/cookies');
 const RE_LETTERS   = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;         // letras y espacios
@@ -154,6 +156,117 @@ router.post('/logout', (req, res) => {
 /* ---------- ME ---------- */
 router.get('/me', auth, (req, res) => {
   res.json({ user: req.user });
+});
+
+/* ---------- Contraseña olvidada (RESET) ---------- */
+//Crea un transport de correo
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  secure: process.env.SMTP_SECURE === 'true', //true para 465, false para 587/25
+  auth: { 
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+// POST /api/auth/forgot-password (pide el reset)
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const ua = req.headers['user-agent'] || '';
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
+
+    //Busca al usuario (solo USER institucional puede resetear aquí; admin/guard por admin)
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    //siempre responde 200 (ok) (para no filtrar enumeración de correos)
+    //Pero si existe y es USER activo, generamos y enviamos
+    if (user?.role === 'USER' && user?.isActive) {
+      //Invalida tokens anteriores sin usar (por higiene)
+      await prisma.passwordReset.updateMany({
+        where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { expiresAt: new Date() } // forzamos expiración inmediata
+      });
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 min desde ahora
+
+      await prisma.passwordReset.create({
+        data: { userId: user.id, token, expiresAt, ip, userAgent: ua }
+      });
+
+      //URL del front http://localhost:3000
+      const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+      const resetUrl =  `${baseUrl}/reset-password?token=${token}`;
+
+      //Envía el correo
+      try {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || '"AccESCOM" <no-reply@accescom.mx>',
+          to: user.email,
+          subject: "Restablece tu contraseña de AccESCOM",
+          html: `
+            <p>Hola ${user.name || 'usuario'},</p>
+            <p>Hiciste una solicitud para restablecer tu contraseña.</p>
+            <p>Haz clic en el siguiente botón (o copia el enlace en tu navegador). Este enlace expira en 30 minutos.</p>
+            <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#0047B6;color:#fff;text-decoration:none;border-radius:6px;">Restablecer contraseña</a></p>
+            <p style="word-break:break-all;">${resetUrl}</p>
+            <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+            <p>Saludos,<br/>El equipo de AccESCOM</p>
+          `
+        });
+      } catch (mailErr) {
+        console.error('EMAIL SEND ERROR: ', mailErr);
+        // decidir si borrar token o no; aquí lo dejamos
+      }
+    }
+
+    return res.json({ ok: true, message: 'Si el correo existe, enviaremos un enlace para restablecer.' });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'No se pudo procesar la solicitud' });
+  }
+});
+
+// POST /api/auth/reset-password  (aplica el reset con token)
+router.post('/reset-password', async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    const newPassword = String(req.body?.password || '');
+
+    if (!token || !RE_PASSWORD.test(newPassword)) {
+      return res.status(400).json({ ok: false, error: 'Token inválido o contraseña no cumple política.' });
+    }
+
+    // Busca token válido
+    const pr = await prisma.passwordReset.findUnique({ where: { token } });
+    if (!pr || pr.usedAt || pr.expiresAt <= new Date()) {
+      return res.status(400).json({ ok: false, error: 'Enlace inválido o expirado.' });
+    }
+
+    // Usuario debe existir y ser USER activo
+    const user = await prisma.user.findUnique({ where: { id: pr.userId } });
+    if (!user || user.role !== 'USER' || !user.isActive) {
+      return res.status(400).json({ ok: false, error: 'No es posible restablecer para esta cuenta.' });
+    }
+
+    // Cambia contraseña + marca token usado (transacción)
+    const hash = await bcrypt.hash(newPassword, 10);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { password: hash } }),
+      prisma.passwordReset.update({ where: { id: pr.id }, data: { usedAt: new Date() } }),
+      prisma.passwordReset.updateMany({
+        where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() }, NOT: { id: pr.id } },
+        data:  { expiresAt: new Date() } // invalidar otros tokens activos
+      })
+    ]);
+
+    return res.json({ ok: true, message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'No se pudo restablecer la contraseña' });
+  }
 });
 
 module.exports = router;

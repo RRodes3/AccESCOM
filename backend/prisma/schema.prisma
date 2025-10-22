@@ -52,9 +52,10 @@ model User {
   isActive    Boolean     @default(true)
   accessState AccessState @default(OUTSIDE)
 
-  qrPasses   QRPass[]
-  accessLogs AccessLog[] @relation("AccessByUser")
-  guardLogs  AccessLog[] @relation("ValidatedByGuard")
+  qrPasses      QRPass[]
+  accessLogs    AccessLog[]     @relation("AccessByUser")
+  guardLogs     AccessLog[]     @relation("ValidatedByGuard")
+  PasswordReset PasswordReset[]
 
   @@index([email])
 }
@@ -115,4 +116,21 @@ model AccessLog {
   guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
 
   createdAt DateTime @default(now())
+}
+
+model PasswordReset {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
 }
