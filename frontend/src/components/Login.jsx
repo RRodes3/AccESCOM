@@ -1,12 +1,37 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { api } from '../services/api';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [flash, setFlash] = useState(location.state?.flash || '');
   const [email, setEmail] = useState('admin@demo.com');
   const [password, setPassword] = useState('123456');
   const [msg, setMsg] = useState('');
+
+  // Limpia el formulario cada vez que entras al login
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+    setMsg('');
+  }, [location.pathname]);
+
+  // Limpia el state para que al refrescar no reaparezca
+  useEffect(() => {
+    if (location.state?.flash) {
+      const t = setTimeout(() => setFlash(''), 2500); // oculta después de 2.5s
+      // Reemplaza el history state para no mantener 'flash'
+      navigate(location.pathname, { replace: true, state: null });
+      return () => clearTimeout(t);
+    }
+  }, [location, navigate]);
+
+  const onChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'email') setEmail(value);
+    else if (name === 'password') setPassword(value);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -24,36 +49,37 @@ export default function Login() {
   };
 
   return (
-    <div className="container" style={{ maxWidth: 420, marginTop: 32 }}>
-      <h3 className="mb-3">Iniciar sesión</h3>
-      <form onSubmit={submit}>
-        <input
-          className="form-control mb-2"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Correo"
-        />
-        <input
-          className="form-control mb-3"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Contraseña"
-        />
-        <button className="btn btn-primary w-100">Entrar</button>
+    <div className="container mt-4" style={{ maxWidth: 420 }}>
+      {flash && <div className="alert alert-success">{flash}</div>}
+      {msg && <div className="alert alert-danger">{msg}</div>}
 
-        <div className="text-center mt-2">
-          <Link
-            to="/forgot-password"
-            className="text-decoration-none"
-            style={{ color: '#0d6efd', fontWeight: '500' }}
-          >
-            ¿Olvidaste tu contraseña? Presiona aquí
-          </Link>
-        </div>
+      <form onSubmit={submit} autoComplete="off">
+        <label className="form-label">Correo institucional</label>
+        <input
+          type="email"
+          name="email"
+          className="form-control mb-2"
+          placeholder="usuario@alumno.ipn.mx"
+          value={email}
+          onChange={onChange}
+          autoComplete="off" //Evita que Chrome recuerde
+        />
+
+        <label className="form-label">Contraseña</label>
+        <input
+          type="password"
+          name="password"
+          className="form-control mb-3"
+          placeholder="••••••••"
+          value={password}
+          onChange={onChange}
+          autoComplete="new-password" //Evita autocompletar
+        />
+
+        <button className="btn btn-primary w-100" type="submit">
+          Iniciar sesión
+        </button>
       </form>
-      {msg && <div className="alert alert-danger mt-3">{msg}</div>}
     </div>
   );
 }

@@ -8,6 +8,7 @@ export default function Navbar() {
   const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user') || 'null');
   const [guestVisit, setGuestVisit] = useState(null);
+  const isLogin = location.pathname === '/login';
 
   useEffect(() => {
     const read = () => {
@@ -56,9 +57,9 @@ export default function Navbar() {
 
   if (location.pathname === '/') return null;
 
-  const isGuestView = location.pathname.startsWith('/guest') && !!guestVisit;
+  const isGuestDashboard = location.pathname.startsWith('/guest') && !!guestVisit;
 
-  // 🔹 Navbar del ADMIN sin "Generar QR" ni "Escaneo"
+  //Navbar del ADMIN sin "Generar QR" ni "Escaneo"
   const isAdmin = user?.role === 'ADMIN';
   const adminLinks = [
     { path: '/dashboard', label: 'Dashboard' },
@@ -68,74 +69,76 @@ export default function Navbar() {
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
-      <div className="container position-relative">
-        {/* Izquierda */}
-        <Link className="navbar-brand" to="/">AccESCOM</Link>
-
-        {/* Centro */}
-        <div
-          className="navbar-nav w-100 text-center justify-content-center align-items-center position-absolute start-0 end-0"
-          style={{ pointerEvents: 'none' }}
+      <div className="container">
+        <Link
+          className="navbar-brand"
+          to="/"
+          style={{ position: 'relative', zIndex: 1, textDecoration: 'none' }}
         >
-          {isGuestView ? (
-            <span className="navbar-text fw-semibold text-white">
-              Bienvenido(a), {guestName || 'Invitado'}
-            </span>
-          ) : (
-            <div className="d-flex flex-column align-items-center w-100">
-              <span
-                className="navbar-text fw-semibold text-white"
-                style={{ fontSize: '1.05rem', lineHeight: 1 }}
-              >
-                {title}
+          AccESCOM
+        </Link>
+
+        <div className="collapse navbar-collapse show">
+          <div
+            className="d-flex flex-column align-items-center text-center"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              pointerEvents: 'none',
+              zIndex: 0
+            }}
+          >
+            {isGuestDashboard ? (
+              <span className="navbar-text fw-semibold text-white" style={{ pointerEvents: 'auto' }}>
+                Bienvenido(a), {guestName || 'Invitado'}
               </span>
+            ) : (
+              <>
+                <span className="navbar-text fw-semibold text-white" style={{ fontSize: '1.05rem', pointerEvents: 'auto' }}>
+                  {title}
+                </span>
+                {isConfirmScreen && (
+                  <small className="fw-bold text-white mt-1" style={{ pointerEvents: 'auto' }}>
+                    Verifica que tus datos sean correctos
+                  </small>
+                )}
+              </>
+            )}
+          </div>
 
-              {isConfirmScreen && (
-                <small
-                  className="fw-bold text-white"
-                  style={{ fontSize: '0.9rem', opacity: 0.95, marginTop: '2px' }}
-                >
-                  Verifica que tus datos sean correctos
-                </small>
-              )}
-            </div>
-          )}
-        </div>
+          <ul className="navbar-nav ms-auto align-items-center gap-2" style={{ position: 'relative', zIndex: 1 }}>
+            {isAdmin &&
+              adminLinks.map((lnk) => (
+                <li key={lnk.path} className="nav-item">
+                  <Link to={lnk.path} className="btn btn-sm btn-outline-light" style={{ pointerEvents: 'auto' }}>
+                    {lnk.label}
+                  </Link>
+                </li>
+              ))}
 
-        {/* Derecha */}
-        <ul className="navbar-nav ms-auto align-items-center gap-2">
-          {isAdmin &&
-            adminLinks.map((link) => (
-              <li key={link.path} className="nav-item">
-                <Link
-                  to={link.path}
-                  className="btn btn-sm btn-outline-light"
-                  style={{ pointerEvents: 'auto' }}
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-
-          {isGuestView ? (
-            <li className="nav-item">
-              <button className="btn btn-outline-light btn-sm" onClick={guestExit}>
-                Salir
-              </button>
-            </li>
-          ) : user ? (
-            <>
-              <li className="nav-item me-2">
-                <span className="navbar-text text-white">Bienvenido(a), {user.name}</span>
-              </li>
+            {isGuestDashboard ? (
               <li className="nav-item">
-                <button className="btn btn-outline-light btn-sm" onClick={logout}>
-                  Cerrar sesión
+                <button className="btn btn-outline-light btn-sm" onClick={guestExit} style={{ pointerEvents: 'auto' }}>
+                  Salir
                 </button>
               </li>
-            </>
-          ) : null}
-        </ul>
+            ) : user ? (
+              <>
+                <li className="nav-item me-2">
+                  <span className="navbar-text text-white" style={{ pointerEvents: 'auto' }}>
+                    Bienvenido(a), {user.name}
+                  </span>
+                </li>
+                <li className="nav-item">
+                  <button className="btn btn-outline-light btn-sm" onClick={logout} style={{ pointerEvents: 'auto' }}>
+                    Cerrar sesión
+                  </button>
+                </li>
+              </>
+            ) : null}
+          </ul>
+        </div>
       </div>
     </nav>
   );

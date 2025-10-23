@@ -1,17 +1,22 @@
 // src/pages/ConfirmRegister.jsx
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { api } from '../services/api';
 
 export default function ConfirmRegister() {
   const location = useLocation();
   const nav = useNavigate();
 
-  // ✅ SIEMPRE calcula form con un useMemo en la raíz
+  //SIEMPRE calcula form con un useMemo en la raíz
   const form = useMemo(() => {
     const f = location.state?.form;
     return f ? f : null;
   }, [location.state]);
+
+  // estados necesarios
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [ok, setOk] = useState(false);
 
   // Si no hay datos, renderiza un aviso simple (sin hooks adicionales)
   if (!form) {
@@ -38,9 +43,20 @@ export default function ConfirmRegister() {
         password: form.password,
       });
       // listo -> a login
-      nav('/login', { replace: true });
+      setOk(true);
+      setMsg('Cuenta creada con éxito. Por favor, inicia sesión.');
+      // Pequeña pausa y redirección al login con un flash opcional
+      setTimeout(() => {
+        nav('/login', {
+          replace: true,
+          state: { flash: 'Tu cuenta fue creada. Inicia sesión.' },
+        });
+      }, 1600);
     } catch (e) {
-      alert(e?.response?.data?.error || 'No se pudo completar el registro');
+      const server = e?.response?.data;
+      setMsg(server?.error || 'No se pudo completar el registro.');
+    } finally {
+      setSending(false);
     }
   };
 
