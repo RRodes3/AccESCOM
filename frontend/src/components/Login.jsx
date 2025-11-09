@@ -79,6 +79,18 @@ export default function Login() {
         <button className="btn btn-primary w-100" type="submit">
           Iniciar sesión
         </button>
+
+        <div className="text-center mt-3">
+          <span style={{ color: '#000000ff' }}>¿Olvidaste tu contraseña? </span>
+          <Link
+            to="/forgot-password"
+            className="text-decoration-underline"
+            style={{ color: '#4c78f5', fontWeight: 600 }}
+          >
+            Presiona aquí
+          </Link>
+        </div>
+
       </form>
     </div>
   );
