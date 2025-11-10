@@ -3,7 +3,6 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const auth = require('../middleware/auth');        // ajusta ruta si difiere
 const { cookieOptions } = require('../utils/cookies');
 const RE_LETTERS   = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;         // letras y espacios
@@ -160,15 +159,7 @@ router.get('/me', auth, (req, res) => {
 
 /* ---------- Contraseña olvidada (RESET) ---------- */
 //Crea un transport de correo
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: process.env.SMTP_SECURE === 'true', //true para 465, false para 587/25
-  auth: { 
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
+const { transporter, sendPasswordResetEmail } = require('../utils/mailer');
 
 // POST /api/auth/forgot-password (pide el reset)
 router.post('/forgot-password', async (req, res) => {
@@ -198,26 +189,14 @@ router.post('/forgot-password', async (req, res) => {
 
       //URL del front http://localhost:3000
       const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
-      const resetUrl =  `${baseUrl}/reset-password?token=${token}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+      console.log('🔗 resetUrl generado:', resetUrl);
+      console.log('📬 Enviando a:', user.email);
 
-      //Envía el correo
       try {
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM || '"AccESCOM" <no-reply@accescom.mx>',
-          to: user.email,
-          subject: "Restablece tu contraseña de AccESCOM",
-          html: `
-            <p>Hola ${user.name || 'usuario'},</p>
-            <p>Hiciste una solicitud para restablecer tu contraseña.</p>
-            <p>Haz clic en el siguiente botón (o copia el enlace en tu navegador). Este enlace expira en 30 minutos.</p>
-            <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#0047B6;color:#fff;text-decoration:none;border-radius:6px;">Restablecer contraseña</a></p>
-            <p style="word-break:break-all;">${resetUrl}</p>
-            <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
-            <p>Saludos,<br/>El equipo de AccESCOM</p>
-          `
-        });
+        await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
       } catch (mailErr) {
-        console.error('EMAIL SEND ERROR: ', mailErr);
+        console.error('EMAIL SEND ERROR:', mailErr?.response || mailErr);
         // decidir si borrar token o no; aquí lo dejamos
       }
     }

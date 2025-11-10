@@ -119,18 +119,20 @@ model AccessLog {
 }
 
 model PasswordReset {
-  id     Int  @id @default(autoincrement())
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  ip        String?
-  userAgent String?
+  ip        String?   @db.VarChar(100)
+  userAgent String?   @db.VarChar(300)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
-  @@index([token])
+  @@index([expiresAt])
 }
+
+

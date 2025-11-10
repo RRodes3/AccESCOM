@@ -29,6 +29,13 @@ app.use('/api/guest', require('./src/routers/guest'));
 // (opcional)
 app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));
 
+const { transporter } = require('./src/utils/mailer');
+
+// verifica disponibilidad SMTP (no bloquea el arranque)
+transporter.verify()
+  .then(() => console.log('✅ SMTP listo para enviar'))
+  .catch(err => console.error('❌ SMTP no disponible:', err?.message || err));
+
 // ---------- Arranque ----------
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
