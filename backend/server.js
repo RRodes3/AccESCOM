@@ -25,6 +25,7 @@ app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));
 app.use('/api/guest', require('./src/routers/guest'));
+app.use('/api/admin/import', require('./src/routers/adminImport'));
 
 // (opcional)
 app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));

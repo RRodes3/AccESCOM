@@ -193,72 +193,108 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
   try {
     const { code } = req.body || {};
     if (typeof code !== 'string' || code.length < 16) {
-      return res.status(400).json({ ok:false, reason:'code inválido' });
+      return res
+        .status(400)
+        .json({ ok: false, reason: 'code inválido', owner: null });
     }
+
     const pass = await prisma.qRPass.findUnique({
       where: { code },
-      include: { user: true, guest: true }
+      include: { user: true, guest: true },
     });
-    if (!pass) return res.status(404).json({ ok:false, reason:'QR no encontrado' });
 
+    if (!pass) {
+      return res
+        .status(404)
+        .json({ ok: false, reason: 'QR no encontrado', owner: null });
+    }
+
+    const owner = buildOwnerFromPass(pass);
+
+    // QR con estado no ACTIVO (USED, REVOKED, EXPIRED, etc.)
     if (pass.status !== 'ACTIVE') {
       await prisma.accessLog.create({
         data: {
-          userId:  pass.userId || null,
+          userId: pass.userId || null,
           guestId: pass.guestId || null,
-          qrId:    pass.id,
-          kind:    pass.kind,
-          action:  'VALIDATE_DENY',
-          guardId: req.user.id
-        }
+          qrId: pass.id,
+          kind: pass.kind,
+          action: 'VALIDATE_DENY',
+          guardId: req.user.id,
+        },
       });
-      return res.status(400).json({ ok:false, reason:'QR ya usado o revocado' });
+      return res.status(400).json({
+        ok: false,
+        reason: 'QR ya usado o revocado',
+        owner, // 👈 mostramos los datos si los hay
+      });
     }
 
     // expiración
     if (pass.expiresAt && pass.expiresAt <= new Date()) {
-      await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'EXPIRED' } });
+      await prisma.qRPass.update({
+        where: { id: pass.id },
+        data: { status: 'EXPIRED' },
+      });
       await prisma.accessLog.create({
         data: {
-          userId:  pass.userId || null,
+          userId: pass.userId || null,
           guestId: pass.guestId || null,
-          qrId:    pass.id,
-          kind:    pass.kind,
-          action:  'VALIDATE_DENY',
-          guardId: req.user.id
-        }
+          qrId: pass.id,
+          kind: pass.kind,
+          action: 'VALIDATE_DENY',
+          guardId: req.user.id,
+        },
       });
-      return res.status(400).json({ ok:false, reason:'QR expirado' });
+      return res.status(400).json({
+        ok: false,
+        reason: 'QR expirado',
+        owner, // 👈 también aquí
+      });
     }
 
     // CASE A) QR de USUARIO (reutilizable, NO marcar USED)
     if (pass.userId) {
       const u = pass.user; // traído por include
+
       // coherencia adentro/afuera (como ya tienes)
-      if (pass.kind === 'ENTRY' && u.accessState === 'INSIDE')
-        return res.status(400).json({ ok:false, reason:'Usuario ya está dentro.' });
-      if (pass.kind === 'EXIT' && u.accessState === 'OUTSIDE')
-        return res.status(400).json({ ok:false, reason:'Usuario ya está fuera.' });
+      if (pass.kind === 'ENTRY' && u.accessState === 'INSIDE') {
+        return res.status(400).json({
+          ok: false,
+          reason: 'Usuario ya está dentro.',
+          owner,
+        });
+      }
+      if (pass.kind === 'EXIT' && u.accessState === 'OUTSIDE') {
+        return res.status(400).json({
+          ok: false,
+          reason: 'Usuario ya está fuera.',
+          owner,
+        });
+      }
 
       await prisma.user.update({
         where: { id: u.id },
-        data: { accessState: u.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE' }
+        data: {
+          accessState: u.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE',
+        },
       });
       await prisma.accessLog.create({
-        data: { 
+        data: {
           userId: u.id,
           qrId: pass.id,
           kind: pass.kind,
           action: 'VALIDATE_ALLOW',
-          guardId: req.user.id 
-        }
+          guardId: req.user.id,
+        },
       });
 
-      const owner = {
-        id: u.id, role: u.role, name: u.name, boleta: u.boleta,
-        firstName: u.firstName, lastNameP: u.lastNameP, lastNameM: u.lastNameM, email: u.email
-      };
-      return res.json({ ok:true, owner, pass: { kind: pass.kind } });
+      const ownerRes = buildOwnerFromPass(pass);
+      return res.json({
+        ok: true,
+        owner: ownerRes,
+        pass: { kind: pass.kind },
+      });
     }
 
     // CASE B) QR de INVITADO (UN SOLO USO → marcar USED)
@@ -266,36 +302,58 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
       const g = pass.guest;
 
       // coherencia simple con estado de visita
-      if (pass.kind === 'ENTRY' && g.state === 'INSIDE')
-        return res.status(400).json({ ok:false, reason:'Invitado ya está dentro.' });
-      if (pass.kind === 'EXIT'  && g.state === 'OUTSIDE')
-        return res.status(400).json({ ok:false, reason:'Invitado aún no ha entrado.' });
+      if (pass.kind === 'ENTRY' && g.state === 'INSIDE') {
+        return res.status(400).json({
+          ok: false,
+          reason: 'Invitado ya está dentro.',
+          owner,
+        });
+      }
+      if (pass.kind === 'EXIT' && g.state === 'OUTSIDE') {
+        return res.status(400).json({
+          ok: false,
+          reason: 'Invitado aún no ha entrado.',
+          owner,
+        });
+      }
 
       // un solo uso:
-      await prisma.qRPass.update({ where: { id: pass.id }, data: { status: 'USED' } });
+      await prisma.qRPass.update({
+        where: { id: pass.id },
+        data: { status: 'USED' },
+      });
 
       // transición de estado de la visita
       await prisma.guestVisit.update({
         where: { id: g.id },
-        data: { state: pass.kind === 'ENTRY' ? 'INSIDE' : 'COMPLETED' }
+        data: { state: pass.kind === 'ENTRY' ? 'INSIDE' : 'COMPLETED' },
       });
 
       await prisma.accessLog.create({
-        data: { guestId: g.id, kind: pass.kind, action: 'VALIDATE_ALLOW', guardId: req.user.id }
+        data: {
+          guestId: g.id,
+          kind: pass.kind,
+          action: 'VALIDATE_ALLOW',
+          guardId: req.user.id,
+        },
       });
 
-      const owner = {
-        role: 'GUEST',
-        name: `${g.firstName} ${g.lastNameP} ${g.lastNameM || ''}`.trim(),
-        firstName: g.firstName, lastNameP: g.lastNameP, lastNameM: g.lastNameM, curp: g.curp, reason: g.reason
-      };
-      return res.json({ ok:true, owner, pass: { kind: pass.kind } });
+      const ownerRes = buildOwnerFromPass(pass);
+      return res.json({
+        ok: true,
+        owner: ownerRes,
+        pass: { kind: pass.kind },
+      });
     }
 
-    return res.status(400).json({ ok:false, reason:'QR inválido' });
+    return res
+      .status(400)
+      .json({ ok: false, reason: 'QR inválido', owner: null });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false, reason: 'Error validando' });
+    res
+      .status(500)
+      .json({ ok: false, reason: 'Error validando', owner: null });
   }
 });
 
@@ -438,5 +496,138 @@ router.post('/reset-state', auth, async (req, res) => {
     res.status(500).json({ error: 'No se pudo resetear el estado' });
   }
 });
+
+/**
+ * POST /api/qr/scan  (GUARD / ADMIN)
+ * Escanea un código y registra un evento (no reemplaza funciones existentes)
+ */
+router.post('/scan', auth, requireRole(['GUARD','ADMIN']), async (req, res) => {
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ ok: false, error: 'Falta code' });
+
+  try {
+    // Busca el QR en la tabla de pases (usa qRPass para mantener consistencia con este archivo)
+    const pass = await prisma.qRPass.findUnique({
+      where: { code },
+      include: { 
+        user: { select: { id:true, name:true, boleta:true, email:true, institutionalType:true } },
+        guest:{ select: { id:true, firstName:true, lastNameP:true, lastNameM:true, curp:true, reason:true } },
+      }
+    });
+
+    let result = 'INVALID_QR';
+    let reason = 'Código no encontrado';
+    let subjectType = 'INSTITUTIONAL';
+    let userId = null;
+    let guestId = null;
+    let expiresAt = null;
+
+    if (pass) {
+      expiresAt = pass.expiresAt || null;
+      if (pass.userId) { subjectType = 'INSTITUTIONAL'; userId = pass.userId; }
+      if (pass.guestId) { subjectType = 'GUEST'; guestId = pass.guestId; }
+
+      const now = new Date();
+      if (pass.status !== 'ACTIVE') {
+        result = 'INVALID_QR';
+        reason = 'QR no activo';
+      } else if (pass.expiresAt && pass.expiresAt < now) {
+        result = 'EXPIRED_QR';
+        reason = 'QR vencido';
+      } else {
+        // aquí podrías validar firmas/flags adicionales
+        result = 'ALLOWED';
+        reason = 'QR válido';
+      }
+    }
+
+    // Determina tipo de acceso (ENTRY/EXIT) a partir del pass.kind si existe
+    const accessType = pass?.kind === 'EXIT' ? 'EXIT' : 'ENTRY';
+
+    // Registrar el evento (usa accessEvent si lo tienes; en este proyecto puede ser accessLog)
+    // Adapta accessEvent -> accessLog si tu esquema solo tiene accessLog.
+    await prisma.accessEvent.create({
+      data: {
+        subjectType,            // 'INSTITUTIONAL' | 'GUEST'
+        userId,
+        guestId,
+        guardId: req.user.id,
+        accessType,
+        result,                 // 'ALLOWED' | 'DENIED' | 'EXPIRED_QR' | 'INVALID_QR'
+        reason,
+      }
+    });
+
+    // Preparar resumen para el guardia (si se puede inferir dueño)
+    let owner = null;
+    if (pass?.user) {
+      owner = {
+        kind: 'INSTITUTIONAL',
+        id: pass.user.id,
+        name: pass.user.name,
+        boleta: pass.user.boleta,
+        email: pass.user.email,
+        institutionalType: pass.user.institutionalType || null,
+      };
+    } else if (pass?.guest) {
+      owner = {
+        kind: 'GUEST',
+        id: pass.guest.id,
+        name: [pass.guest.firstName, pass.guest.lastNameP, pass.guest.lastNameM].filter(Boolean).join(' '),
+        curp: pass.guest.curp || null,
+        reason: pass.guest.reason || null,
+      };
+    }
+
+    return res.json({
+      ok: result === 'ALLOWED',
+      result,
+      reason,
+      accessType,
+      expiresAt: pass?.expiresAt ?? null,
+      owner, // puede ser null si no se pudo inferir
+    });
+  } catch (e) {
+    console.error('QR/scan error:', e);
+    return res.status(500).json({ ok: false, error: 'No se pudo validar el QR' });
+  }
+});
+
+// Construye la info del dueño del QR (usuario o invitado)
+function buildOwnerFromPass(pass) {
+  if (!pass) return null;
+
+  if (pass.user) {
+    const u = pass.user;
+    return {
+      kind: 'INSTITUTIONAL',
+      id: u.id,
+      role: u.role,
+      name: u.name,
+      firstName: u.firstName,
+      lastNameP: u.lastNameP,
+      lastNameM: u.lastNameM,
+      boleta: u.boleta,
+      email: u.email,
+      institutionalType: u.institutionalType || null,
+    };
+  }
+
+  if (pass.guest) {
+    const g = pass.guest;
+    return {
+      kind: 'GUEST',
+      id: g.id,
+      name: `${g.firstName} ${g.lastNameP} ${g.lastNameM || ''}`.trim(),
+      firstName: g.firstName,
+      lastNameP: g.lastNameP,
+      lastNameM: g.lastNameM,
+      curp: g.curp || null,
+      reason: g.reason || null,
+    };
+  }
+
+  return null;
+}
 
 module.exports = router;

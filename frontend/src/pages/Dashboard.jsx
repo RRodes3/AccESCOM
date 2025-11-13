@@ -1,29 +1,202 @@
-import React from "react";
+// frontend/src/pages/Dashboard.jsx
+import { useEffect, useState } from 'react';
+import { api } from '../services/api';
 
-function Dashboard() {
+export default function Dashboard() {
+  const [stats, setStats] = useState(null);
+  const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelado = false;
+
+    async function cargar() {
+      setLoading(true);
+      setError('');
+      try {
+        // 1) Totales generales (usuarios, QR, logs, allowed, denied)
+        const statsRes = await api.get('/qr/stats');
+
+        // 2) Últimos accesos (logs); pedimos 10
+        const logsRes = await api.get('/qr/logs', {
+          params: { take: 10, skip: 0 },
+        });
+
+        if (cancelado) return;
+        setStats(statsRes.data || null);
+        setRecent(logsRes.data?.items || []);
+      } catch (e) {
+        if (cancelado) return;
+        console.error('Dashboard error:', e);
+        setError(
+          e?.response?.data?.error ||
+            e.message ||
+            'No se pudieron cargar las estadísticas'
+        );
+      } finally {
+        if (!cancelado) setLoading(false);
+      }
+    }
+
+    cargar();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  const fmtFecha = (iso) =>
+    iso ? new Date(iso).toLocaleString() : '—';
+
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-4">Panel de Control</h1>
-      <p className="text-gray-700">
-        Bienvenido al sistema de control de accesos con QR.
-      </p>
+    <div className="container mt-3">
+      <h3 className="mb-3">Panel de Administración (Dashboard)</h3>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-        <div className="bg-white shadow rounded-xl p-4">
-          <h2 className="text-lg font-semibold">Usuarios Registrados</h2>
-          <p className="text-2xl font-bold text-blue-600">120</p>
+      {error && <div className="alert alert-danger">{error}</div>}
+      {loading && <p className="text-muted">Cargando…</p>}
+
+      {/* ---------- TARJETAS SUPERIORES ---------- */}
+      {stats && (
+        <div className="row g-3 mb-4">
+          <div className="col-md-4">
+            <div className="card shadow-sm h-100">
+              <div className="card-body">
+                <h5 className="card-title">Usuarios</h5>
+                <p className="fs-3 mb-0">{stats.users}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="card shadow-sm h-100">
+              <div className="card-body">
+                <h5 className="card-title">QR emitidos</h5>
+                <p className="fs-3 mb-0">{stats.passes}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="card shadow-sm h-100">
+              <div className="card-body">
+                <h5 className="card-title">Logs</h5>
+                <p className="fs-3 mb-0">{stats.logs}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="card shadow-sm h-100">
+              <div className="card-body">
+                <h5 className="card-title">Accesos permitidos</h5>
+                <p className="fs-3 text-success mb-1">{stats.allowed}</p>
+                <small className="text-muted">
+                  {(stats.allowed / Math.max(stats.logs || 1, 1) * 100)
+                    .toFixed(1)
+                    .replace('.0', '')}
+                  % de accesos
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-md-4">
+            <div className="card shadow-sm h-100">
+              <div className="card-body">
+                <h5 className="card-title">Accesos denegados</h5>
+                <p className="fs-3 text-danger mb-1">{stats.denied}</p>
+                <small className="text-muted">
+                  {(stats.denied / Math.max(stats.logs || 1, 1) * 100)
+                    .toFixed(1)
+                    .replace('.0', '')}
+                  % de intentos
+                </small>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="bg-white shadow rounded-xl p-4">
-          <h2 className="text-lg font-semibold">Accesos Hoy</h2>
-          <p className="text-2xl font-bold text-green-600">45</p>
-        </div>
-        <div className="bg-white shadow rounded-xl p-4">
-          <h2 className="text-lg font-semibold">Intentos Fallidos</h2>
-          <p className="text-2xl font-bold text-red-600">3</p>
+      )}
+
+      {/* ---------- BLOQUE DE ÚLTIMOS ACCESOS ---------- */}
+      <div className="card shadow-sm">
+        <div className="card-body">
+          <h5 className="card-title mb-3">Últimos accesos registrados</h5>
+
+          {/* Texto de depuración para asegurarnos de que este bloque se pinta */}
+          <p className="text-muted mb-2">
+            (DEBUG: este texto debe verse siempre, haya o no registros)
+          </p>
+
+          {!recent.length && !loading && (
+            <p className="text-muted mb-0">Sin registros todavía.</p>
+          )}
+
+          {!!recent.length && (
+            <div className="table-responsive">
+              <table className="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Acción</th>
+                    <th>Dueño QR</th>
+                    <th>Guardia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.map((row) => {
+                    const esInvitado = !!row.guest;
+                    const nombre = esInvitado
+                      ? [
+                          row.guest.firstName,
+                          row.guest.lastNameP,
+                          row.guest.lastNameM,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+                      : [
+                          row.user?.firstName,
+                          row.user?.lastNameP,
+                          row.user?.lastNameM,
+                        ]
+                          .filter(Boolean)
+                          .join(' ') || row.user?.name || '—';
+
+                    const tipo =
+                      row.qr?.kind === 'ENTRY'
+                        ? 'Entrada'
+                        : row.qr?.kind === 'EXIT'
+                        ? 'Salida'
+                        : '—';
+
+                    const accion =
+                      row.action === 'VALIDATE_ALLOW'
+                        ? 'Permitido'
+                        : row.action === 'VALIDATE_DENY'
+                        ? 'Denegado'
+                        : row.action;
+
+                    return (
+                      <tr key={row.id}>
+                        <td>{fmtFecha(row.createdAt)}</td>
+                        <td>{tipo}</td>
+                        <td>{accion}</td>
+                        <td>
+                          {nombre}
+                          <div className="text-muted small">
+                            {esInvitado ? 'Invitado' : row.user?.role || '—'}
+                          </div>
+                        </td>
+                        <td>{row.guard?.name || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-export default Dashboard;

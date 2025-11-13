@@ -8,6 +8,7 @@ import {
   deactivateUser,
   restoreUser
 } from '../services/admin';
+import { Link } from 'react-router-dom';
 
 const RE_LETTERS   = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 const RE_BOLETA    = /^\d{10}$/;
@@ -21,7 +22,7 @@ export default function AdminUsers() {
   // --- Estado de formulario de alta ---
   const [form, setForm] = useState({
     boleta: '', firstName: '', lastNameP: '', lastNameM: '',
-    email: '', password: '', role: 'GUARD'
+    email: '', password: '', role: 'GUARD', institutionalType: '' // ← agregado
   });
   const [errors, setErrors] = useState({});
   const [msg, setMsg] = useState('');
@@ -92,16 +93,18 @@ export default function AdminUsers() {
 
     setSending(true);
     try {
-      await createUser({
+      const payload = {
         boleta: form.boleta,
         firstName: form.firstName.trim(),
         lastNameP: form.lastNameP.trim(),
         lastNameM: form.lastNameM.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        role: form.role
-      });
-      setForm({ boleta:'', firstName:'', lastNameP:'', lastNameM:'', email:'', password:'', role:'GUARD' });
+        role: form.role,
+        ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {})
+      };
+      await createUser(payload);
+      setForm({ boleta:'', firstName:'', lastNameP:'', lastNameM:'', email:'', password:'', role:'GUARD', institutionalType: '' });
       setSkip(0);
       await load();
       setMsg('Usuario creado correctamente');
@@ -153,6 +156,11 @@ export default function AdminUsers() {
   return (
     <div className="container mt-3">
       <h3>Administración de usuarios</h3>
+      <div className="mb-3">
+        <Link to="/import-db" className="btn btn-secondary">
+          Importar BD con usuarios
+        </Link>
+      </div>
 
       {/* Filtros */}
       <div className="row g-2 align-items-end">
@@ -192,6 +200,7 @@ export default function AdminUsers() {
               <th>Nombre</th>
               <th>Correo</th>
               <th>Rol</th>
+              <th>Sub-rol</th>
               <th>Estado</th>
               <th>Creado</th>
               <th style={{width:260}}>Acciones</th>
@@ -199,15 +208,16 @@ export default function AdminUsers() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7}>Cargando…</td></tr>
+              <tr><td colSpan={8}>Cargando…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7}>Sin resultados</td></tr>
+              <tr><td colSpan={8}>Sin resultados</td></tr>
             ) : items.map(u => (
               <tr key={u.id}>
                 <td>{u.boleta}</td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
                 <td>{u.role}</td>
+                <td>{u.institutionalType || '-'}</td>
                 <td>
                   {u.isActive
                     ? <span className="badge bg-success">Activo</span>
@@ -301,6 +311,16 @@ export default function AdminUsers() {
             </select>
             {errors.role && <div className="invalid-feedback d-block">{errors.role}</div>}
           </div>
+          <div className="col-md-3">
+            <label className="form-label">Sub-rol institucional</label>
+            <select name="institutionalType" className="form-select" value={form.institutionalType} onChange={onChange}>
+              <option value="">(opcional)</option>
+              <option value="STUDENT">STUDENT</option>
+              <option value="TEACHER">TEACHER</option>
+              <option value="PAE">PAE</option>
+            </select>
+            <div className="form-text">Sólo aplica si el rol es <strong>USER</strong>.</div>
+          </div>
           <div className="col-md-6">
             <label className="form-label">Contraseña</label>
             <input name="password" type="password"
@@ -339,7 +359,7 @@ export default function AdminUsers() {
               {guests.map(g => (
                 <tr key={g.id}>
                   <td>{[g.firstName, g.lastNameP, g.lastNameM].filter(Boolean).join(' ')}</td>
-                  <td>{g.curp}</td>
+                  <td>{g.curp}</td> 
                   <td>{g.reason}</td>
                   <td>{g.state}</td>
                   <td>{new Date(g.createdAt).toLocaleString()}</td>
@@ -347,7 +367,7 @@ export default function AdminUsers() {
                 </tr>
               ))}
               {guests.length === 0 && (
-                <tr><td colSpan="6" className="text-center text-muted">Sin invitados</td></tr>
+                <tr><td colSpan={6} className="text-center text-muted">Sin invitados</td></tr>
               )}
             </tbody>
           </table>

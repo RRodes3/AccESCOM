@@ -31,7 +31,8 @@ router.post('/register', async (req, res) => {
     // 1) Extrae y normaliza entradas
     let {
       boleta, firstName, lastNameP, lastNameM,
-      name, email, password /*, role (IGNORADO) */
+      name, email, password, /* role (ignorado) */
+      institutionalType       // ← NUEVO (opcional)
     } = req.body || {};
 
     boleta     = (boleta || '').trim();
@@ -41,7 +42,13 @@ router.post('/register', async (req, res) => {
     email      = String(email || '').trim().toLowerCase();
     password   = String(password || '');
 
-    // 2) Valida campos (acumula errores para feedback de UI)
+    // 2) Validación simple del institutionalType (opcional)
+    const INSTITUTIONAL_TYPES = ['STUDENT','TEACHER','PAE'];
+    if (institutionalType && !INSTITUTIONAL_TYPES.includes(String(institutionalType))) {
+      return res.status(400).json({ error: 'institutionalType inválido' });
+    }
+
+    // 3) Valida campos (acumula errores para feedback de UI)
     const errors = {};
     if (!RE_BOLETA.test(boleta)) errors.boleta = 'La boleta debe tener exactamente 10 dígitos.';
     if (!firstName)              errors.firstName = 'El nombre es obligatorio.';
@@ -68,6 +75,17 @@ router.post('/register', async (req, res) => {
     // 5) Hash de contraseña
     const hash = await bcrypt.hash(password, 10);
 
+    // 5.1) Determinar sub-rol institucional si no fue enviado (solo para USER)
+    //     No sobreescribe institutionalType proveniente del body.
+    let resolvedInstitutionalType = institutionalType || null;
+    if (!resolvedInstitutionalType) {
+      if (/@alumno\.ipn\.mx$/i.test(email)) {
+        resolvedInstitutionalType = 'STUDENT';
+      } else if (/@ipn\.mx$/i.test(email)) {
+        resolvedInstitutionalType = 'TEACHER';
+      }
+    }
+    
     // 6) Crea usuario (FORZAR role = 'USER' por seguridad)
     const created = await prisma.user.create({
       data: {
@@ -79,8 +97,12 @@ router.post('/register', async (req, res) => {
         email,
         password: hash,
         role: 'USER',
+        institutionalType: resolvedInstitutionalType, // ← usa el valor resuelto (body o inferido)
       },
-      select: { id:true, name:true, email:true, role:true, boleta:true, firstName:true, lastNameP:true, lastNameM:true }
+      select: {
+        id: true, name: true, email: true, role: true, boleta: true,
+        firstName: true, lastNameP: true, lastNameM: true, institutionalType: true
+      }
     });
 
     return res.json({ ok:true, user: created });

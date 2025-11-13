@@ -22,8 +22,11 @@
         "dotenv": "^17.2.2",
         "express": "^5.1.0",
         "jsonwebtoken": "^9.0.2",
+        "multer": "^2.0.2",
         "nodemailer": "^7.0.9",
-        "prisma": "^6.15.0"
+        "pdfkit": "^0.17.2",
+        "prisma": "^6.15.0",
+        "xlsx": "^0.18.5"
     },
     "prisma": {
         "seed": "node prisma/seed.js"

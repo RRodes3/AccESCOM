@@ -38,26 +38,40 @@ enum QRKind {
   EXIT
 }
 
+enum GuestState {
+  OUTSIDE
+  INSIDE
+  COMPLETED
+}
+
+enum InstitutionalType {
+  STUDENT
+  TEACHER
+  PAE
+}
+
 model User {
-  id          Int         @id @default(autoincrement())
-  boleta      String?     @unique
-  name        String
-  firstName   String?
-  lastNameP   String?
-  lastNameM   String?
-  email       String      @unique
-  password    String
-  role        Role        @default(USER)
-  createdAt   DateTime    @default(now())
-  isActive    Boolean     @default(true)
-  accessState AccessState @default(OUTSIDE)
+  id                Int                @id @default(autoincrement())
+  boleta            String?            @unique
+  name              String
+  firstName         String?
+  lastNameP         String?
+  lastNameM         String?
+  email             String             @unique
+  password          String
+  role              String // ADMIN | GUARD | USER
+  institutionalType InstitutionalType? //Solo aplica cuando role = USER
+  createdAt         DateTime           @default(now())
+  isActive          Boolean            @default(true)
+  accessState       AccessState        @default(OUTSIDE)
 
   qrPasses      QRPass[]
   accessLogs    AccessLog[]     @relation("AccessByUser")
   guardLogs     AccessLog[]     @relation("ValidatedByGuard")
   PasswordReset PasswordReset[]
 
-  @@index([email])
+  @@index([role])
+  @@index([institutionalType])
 }
 
 model GuestVisit {
@@ -75,12 +89,6 @@ model GuestVisit {
   logs   AccessLog[] @relation("AccessByGuest")
 
   @@index([curp]) // << QUITAR @unique y dejarlo con índice normal
-}
-
-enum GuestState {
-  OUTSIDE
-  INSIDE
-  COMPLETED
 }
 
 model QRPass {
@@ -119,9 +127,9 @@ model AccessLog {
 }
 
 model PasswordReset {
-  id        Int       @id @default(autoincrement())
-  userId    Int
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   token     String    @unique
   expiresAt DateTime
@@ -129,10 +137,8 @@ model PasswordReset {
   ip        String?   @db.VarChar(100)
   userAgent String?   @db.VarChar(300)
 
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
 }
-
-

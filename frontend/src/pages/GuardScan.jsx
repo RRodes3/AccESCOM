@@ -19,75 +19,150 @@ function playFeedback(ok) {
   o.stop(ctx.currentTime + 0.28);
 }
 
-/* ---------- Tarjeta de resultado ---------- */
+/* ---------- Normalizador del resultado del backend ---------- */
+function normalizeScanPayload(raw) {
+  if (!raw) raw = {};
+  return {
+    ok: !!raw.ok,
+    kind: raw.pass?.kind || raw.kind || null,
+    owner: raw.owner || null,
+    reason: raw.reason || '',
+  };
+}
+
+/* ---------- Tarjeta de resultado (misma UI de antes, pero con datos también en error) ---------- */
 function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   const approved = ok === true;
-  const roleLabel = { 
+  const roleLabel = {
     ADMIN: 'Administrador',
     USER: 'Usuario institucional',
     GUARD: 'Guardia',
-    GUEST: 'Invitado'
+    GUEST: 'Invitado',
   };
   const heading = approved
-    ? (kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido')
-    : (kind === 'EXIT' ? 'Salida denegada' : 'Acceso denegado');
+    ? kind === 'EXIT'
+      ? 'Salida permitida'
+      : 'Acceso permitido'
+    : kind === 'EXIT'
+      ? 'Salida denegada'
+      : 'Acceso denegado';
+
+  const subRoleLabel =
+    owner?.institutionalType &&
+    (
+      {
+        STUDENT: 'Alumno',
+        TEACHER: 'Docente',
+        PAE: 'PAE',
+      }[owner.institutionalType] || owner.institutionalType
+    );
 
   return (
     <div className="container mt-4" style={{ maxWidth: 420 }}>
-      <div className={`rounded-3 text-white text-center fw-bold py-2 ${approved ? 'bg-success' : 'bg-danger'}`}>
+      {/* Franja roja / verde arriba */}
+      <div
+        className={`rounded-3 text-white text-center fw-bold py-2 ${
+          approved ? 'bg-success' : 'bg-danger'
+        }`}
+      >
         {heading}
       </div>
 
+      {/* Tarjeta gris central */}
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
-        {approved ? (
-          <>
-            <p className="mb-1"><b>Tipo:</b> {roleLabel[owner?.role] || '—'}</p>
+        {/* Mensaje principal */}
+        <div style={{ whiteSpace: 'pre-line' }} className="mb-3">
+          <p className="mb-0">
+            {reason ||
+              (approved
+                ? 'QR válido.'
+                : 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.')}
+          </p>
+          {!approved && (
+            <p className="mt-3 mb-0">Última opción: registro manual.</p>
+          )}
+        </div>
 
+        {/* Datos del dueño del QR (se muestran tanto en éxito como en error si existen) */}
+        {owner && (
+          <>
+            <hr className="border-light" />
+            <p className="mb-1">
+              <b>Tipo:</b> {roleLabel[owner.role] || '—'}
+            </p>
             <p className="mb-1">
               <b>Nombre:</b>{' '}
-              {[owner?.firstName, owner?.lastNameP, owner?.lastNameM]
+              {[
+                owner.firstName,
+                owner.lastNameP,
+                owner.lastNameM,
+              ]
                 .filter(Boolean)
-                .join(' ') || owner?.name || '—'}
+                .join(' ') || owner.name || '—'}
             </p>
 
-            {owner?.role === 'GUEST' ? (
+            {owner.role === 'GUEST' ? (
               <>
-                <p className="mb-1"><b>CURP:</b> {owner?.curp || '—'}</p>
-                <p className="mb-1"><b>Motivo visita:</b> {owner?.reason || '—'}</p>
+                <p className="mb-1">
+                  <b>CURP:</b> {owner.curp || '—'}
+                </p>
+                <p className="mb-1">
+                  <b>Motivo visita:</b> {owner.reason || '—'}
+                </p>
               </>
             ) : (
               <>
-                <p className="mb-1"><b>No. boleta:</b> {owner?.boleta || '—'}</p>
-                <p className="mb-1"><b>Email:</b> {owner?.email || '—'}</p>
+                <p className="mb-1">
+                  <b>No. boleta:</b> {owner.boleta || '—'}
+                </p>
+                <p className="mb-1">
+                  <b>Email:</b> {owner.email || '—'}
+                </p>
+                {subRoleLabel && (
+                  <p className="mb-1">
+                    <b>Sub-rol:</b> {subRoleLabel}
+                  </p>
+                )}
               </>
             )}
 
+            {/* Aquí luego puedes poner la FOTO real, por ahora avatar con inicial */}
             <div className="d-flex justify-content-center mt-3">
               <div
                 style={{
-                  width: 160, height: 160, borderRadius: '50%',
-                  background: '#d9a89c', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  color: '#333', fontWeight: 'bold'
+                  width: 160,
+                  height: 160,
+                  borderRadius: '50%',
+                  background: '#d9a89c',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#333',
+                  fontWeight: 'bold',
+                  fontSize: '3rem',
                 }}
               >
-                {(owner?.firstName?.[0] || owner?.name?.[0] || 'U').toUpperCase()}
+                {(owner.firstName?.[0] || owner.name?.[0] || 'U').toUpperCase()}
               </div>
             </div>
           </>
-        ) : (
-          <div style={{ whiteSpace: 'pre-line' }}>
-            <p className="mb-0">{reason || 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.'}</p>
-            <p className="mt-3 mb-0">Última opción: registro manual.</p>
-          </div>
         )}
       </div>
 
+      {/* Botones inferiores grandes */}
       <div className="d-grid gap-2 mt-4">
-        <button type="button" className="btn btn-primary btn-lg" onClick={onScanAgain}>
+        <button
+          type="button"
+          className="btn btn-primary btn-lg"
+          onClick={onScanAgain}
+        >
           Escanear nuevo código
         </button>
-        <button type="button" className="btn btn-outline-primary" onClick={onBack}>
+        <button
+          type="button"
+          className="btn btn-outline-primary"
+          onClick={onBack}
+        >
           Regresar al menú
         </button>
       </div>
@@ -104,13 +179,17 @@ export default function GuardScan() {
   const [mode, setMode] = useState('reader');
 
   // html5-qrcode refs
-  const scannerRef  = useRef(null);
+  const scannerRef = useRef(null);
   const startingRef = useRef(false);
-  const startedRef  = useRef(false);
+  const startedRef = useRef(false);
 
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState('');
   const [result, setResult] = useState(null);
+
+  // detección de lector HID
+  const [readerReady, setReaderReady] = useState(false);
+  const bufferRef = useRef({ str: '', last: 0 });
 
   /* ---------- util ---------- */
   const clearContainer = () => {
@@ -121,11 +200,15 @@ export default function GuardScan() {
   const hardStopCamera = (regionSelector = `#${regionId}`) => {
     const scoped = document.querySelectorAll(`${regionSelector} video`);
     const all = scoped.length ? scoped : document.querySelectorAll('video');
-    all.forEach(v => {
+    all.forEach((v) => {
       try {
         const src = v.srcObject;
         if (src && typeof src.getTracks === 'function') {
-          src.getTracks().forEach(t => { try { t.stop(); } catch {} });
+          src.getTracks().forEach((t) => {
+            try {
+              t.stop();
+            } catch {}
+          });
         }
         v.srcObject = null;
         v.removeAttribute('src');
@@ -138,21 +221,26 @@ export default function GuardScan() {
   const handleCode = useCallback(async (code) => {
     setMsg('Validando…');
 
-    // si veníamos de cámara, pausamos y/o detenemos
+    // si veníamos de cámara, pausamos
     if (startedRef.current) {
-      try { await scannerRef.current?.pause?.(); } catch {}
+      try {
+        await scannerRef.current?.pause?.();
+      } catch {}
     }
 
     try {
       const { data } = await api.post('/qr/validate', { code });
-      playFeedback(!!data.ok);
-      setResult({ ok: data.ok, kind: data.pass?.kind, owner: data.owner, reason: data.reason });
+      const payload = normalizeScanPayload(data);
+      playFeedback(payload.ok);
+      setResult(payload);
     } catch (e) {
+      const data = e?.response?.data || {};
+      const payload = normalizeScanPayload(data);
       playFeedback(false);
-      setResult({ ok: false, reason: e?.response?.data?.reason || 'Error validando' });
+      setResult(payload);
     } finally {
       setMsg('');
-      // detenemos completamente la cámara si estaba activa
+      // detenemos cámara si estaba activa
       if (startedRef.current) await stopScanner();
     }
   }, []); // eslint-disable-line
@@ -195,7 +283,9 @@ export default function GuardScan() {
       await scanner.start(
         { facingMode: 'environment' },
         config,
-        async (text) => { await handleCode(text); },
+        async (text) => {
+          await handleCode(text);
+        },
         () => {}
       );
 
@@ -205,7 +295,9 @@ export default function GuardScan() {
     } catch (err) {
       console.error('Error start scanner:', err);
       setMsg('No se pudo iniciar la cámara');
-      try { await scannerRef.current?.clear?.(); } catch {}
+      try {
+        await scannerRef.current?.clear?.();
+      } catch {}
       hardStopCamera();
       scannerRef.current = null;
     } finally {
@@ -213,7 +305,7 @@ export default function GuardScan() {
     }
   }, [handleCode]);
 
-  // Montaje / cambio de modo: enciende/apaga cámara según corresponda
+  // Montaje / cambio de modo
   useEffect(() => {
     if (mode === 'camera') {
       clearContainer();
@@ -227,45 +319,48 @@ export default function GuardScan() {
   }, [mode, startScanner, stopScanner]);
 
   useEffect(() => {
-    return () => { stopScanner(); hardStopCamera(); };
+    return () => {
+      stopScanner();
+      hardStopCamera();
+    };
   }, [stopScanner]);
 
   /* ---------- Lector USB (HID) ---------- */
   useEffect(() => {
     if (mode !== 'reader') return;
 
-    let timer = null;
-    let buf = '';
-
-    const flushIfAny = () => {
-      const code = buf.trim();
-      buf = '';
-      if (code) handleCode(code);
-    };
-
     const onKeyDown = (e) => {
       // Evita capturar si hay un input activo
       const a = document.activeElement;
-      const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      const typing =
+        a &&
+        (a.tagName === 'INPUT' ||
+          a.tagName === 'TEXTAREA' ||
+          a.isContentEditable);
       if (typing) return;
 
-      // Reinicia timeout de inactividad entre teclas
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { flushIfAny(); }, 120);
+      const now = Date.now();
+      const dt = now - (bufferRef.current.last || 0);
+      if (dt > 250) bufferRef.current.str = ''; // pausa larga → reinicia buffer
+      bufferRef.current.last = now;
 
       if (e.key === 'Enter' || e.key === 'NumpadEnter') {
-        flushIfAny();
-      } else if (e.key.length === 1) {
-        buf += e.key;
+        const code = bufferRef.current.str.trim();
+        bufferRef.current.str = '';
+        if (code.length >= 6) {
+          if (!readerReady) setReaderReady(true); // primer escaneo detecta lector
+          handleCode(code);
+        }
+        return;
       }
+
+      // acumula caracteres imprimibles
+      if (e.key.length === 1) bufferRef.current.str += e.key;
     };
 
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      if (timer) clearTimeout(timer);
-    };
-  }, [mode, handleCode]);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mode, handleCode, readerReady]);
 
   /* ---------- Handlers de UI ---------- */
   const handleScanAgain = () => {
@@ -298,14 +393,18 @@ export default function GuardScan() {
         {/* Selector de modo */}
         <div className="btn-group">
           <button
-            className={`btn btn-sm ${mode === 'reader' ? 'btn-primary' : 'btn-outline-primary'}`}
+            className={`btn btn-sm ${
+              mode === 'reader' ? 'btn-primary' : 'btn-outline-primary'
+            }`}
             onClick={() => setMode('reader')}
             title="Usar lector USB (HID)"
           >
             Usar lector
           </button>
           <button
-            className={`btn btn-sm ${mode === 'camera' ? 'btn-primary' : 'btn-outline-primary'}`}
+            className={`btn btn-sm ${
+              mode === 'camera' ? 'btn-primary' : 'btn-outline-primary'
+            }`}
             onClick={() => setMode('camera')}
             title="Usar cámara del dispositivo"
           >
@@ -324,11 +423,17 @@ export default function GuardScan() {
           />
           <div className="mt-2">
             {!running ? (
-              <button className="btn btn-success btn-sm me-2" onClick={startScanner}>
+              <button
+                className="btn btn-success btn-sm me-2"
+                onClick={startScanner}
+              >
                 Iniciar escaneo
               </button>
             ) : (
-              <button className="btn btn-danger btn-sm me-2" onClick={stopScanner}>
+              <button
+                className="btn btn-danger btn-sm me-2"
+                onClick={stopScanner}
+              >
                 Detener escaneo
               </button>
             )}
@@ -338,14 +443,25 @@ export default function GuardScan() {
 
       {/* Indicador en modo lector */}
       {mode === 'reader' && (
-        <div className="alert alert-info mt-3 mb-0">
-          <b>Lector listo:</b> acerca el QR al escáner (HID). Acepta terminadores CR/LF o timeout.
+        <div
+          className={`alert ${
+            readerReady ? 'alert-info' : 'alert-warning'
+          } mt-3 mb-0`}
+        >
+          <b>{readerReady ? 'Lector listo:' : 'Esperando lector:'}</b>{' '}
+          {readerReady
+            ? 'acerca el QR al escáner (HID). Acepta CR/LF o timeout.'
+            : 'conecta tu escáner HID y realiza un primer escaneo para detectar el dispositivo.'}
         </div>
       )}
 
       {!running && mode === 'camera' && (
         <div className="mt-3 d-flex justify-content-end">
-          <button type="button" className="btn btn-outline-secondary" onClick={handleBack}>
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={handleBack}
+          >
             Regresar al menú
           </button>
         </div>

@@ -108,14 +108,24 @@ export default function Navbar() {
           </div>
 
           <ul className="navbar-nav ms-auto align-items-center gap-2" style={{ position: 'relative', zIndex: 1 }}>
-            {isAdmin &&
-              adminLinks.map((lnk) => (
-                <li key={lnk.path} className="nav-item">
-                  <Link to={lnk.path} className="btn btn-sm btn-outline-light" style={{ pointerEvents: 'auto' }}>
-                    {lnk.label}
+            {isAdmin && (
+              <>
+                {adminLinks.map((lnk) => (
+                  <li key={lnk.path} className="nav-item">
+                    <Link to={lnk.path} className="btn btn-sm btn-outline-light" style={{ pointerEvents: 'auto' }}>
+                      {lnk.label}
+                    </Link>
+                  </li>
+                ))}
+
+                {/* Enlace adicional para importar base de datos (solo ADMIN) */}
+                <li className="nav-item">
+                  <Link to="/import-db" className="nav-link btn btn-sm btn-outline-light" style={{ pointerEvents: 'auto' }}>
+                    Importar BD
                   </Link>
                 </li>
-              ))}
+              </>
+            )}
 
             {isGuestDashboard ? (
               <li className="nav-item">

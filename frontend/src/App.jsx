@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers.jsx';
 import GenerateQR from './pages/GenerateQR.jsx';
 import GuardScan from './pages/GuardScan.jsx';
 import AccessReport from './pages/AccessReport.jsx';
+import ImportDB from './pages/ImportDB.jsx';
 import GuestDashboard from './pages/dashboards/GuestDashboard.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
@@ -44,6 +45,7 @@ function AppLayout() {
           <Route path="/register/confirm" element={<ConfirmRegister />} />
            {/*--  <Route path="/guest/confirm" element={<ConfirmGuest />} />  --*/}
           <Route path="/confirm-guest" element={<ConfirmGuest />} />
+          
 
           {/* Protegidas */}
           <Route
@@ -87,6 +89,15 @@ function AppLayout() {
             element={
               <ProtectedRoute roles={['ADMIN']}>
                 <AccessReport />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/import-db"
+            element={
+              <ProtectedRoute roles={['ADMIN']}>
+                <ImportDB />
               </ProtectedRoute>
             }
           />

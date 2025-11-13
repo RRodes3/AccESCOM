@@ -41,6 +41,7 @@ async function main() {
       email: 'user@demo.com',
       password: await strong(P_USER),
       role: 'USER',
+      institutionalType: 'STUDENT', // 👈 opcional: define tipo institucional
     },
   ];
 
@@ -49,7 +50,18 @@ async function main() {
     await prisma.user.upsert({
       where: { email: u.email },
       update: {},
-      create: u,
+      create: {
+        boleta: u.boleta,
+        firstName: u.firstName,
+        lastNameP: u.lastNameP,
+        lastNameM: u.lastNameM,
+        name: u.name,
+        email: u.email,
+        password: u.password,
+        role: u.role,
+        isActive: true,
+        institutionalType: u.role === 'USER' ? (u.institutionalType || null) : null,
+      },
     });
   }
 
