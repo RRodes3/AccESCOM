@@ -22,6 +22,7 @@ import ImportDB from './pages/ImportDB.jsx';
 import GuestDashboard from './pages/dashboards/GuestDashboard.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
+import ChangePassword from './pages/ChangePassword';
 
 
 function AppLayout() {
@@ -89,6 +90,16 @@ function AppLayout() {
             element={
               <ProtectedRoute roles={['ADMIN']}>
                 <AccessReport />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Ruta para cambio de contraseña (usuario autenticado) */}
+          <Route
+            path="/change-password"
+            element={
+              <ProtectedRoute>
+                <ChangePassword />
               </ProtectedRoute>
             }
           />

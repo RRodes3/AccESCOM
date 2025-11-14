@@ -30,139 +30,157 @@ function normalizeScanPayload(raw) {
   };
 }
 
-/* ---------- Tarjeta de resultado (misma UI de antes, pero con datos también en error) ---------- */
+/* ---------- Tarjeta de resultado ---------- */
 function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
-  const approved = ok === true;
-  const roleLabel = {
-    ADMIN: 'Administrador',
-    USER: 'Usuario institucional',
-    GUARD: 'Guardia',
-    GUEST: 'Invitado',
-  };
-  const heading = approved
-    ? kind === 'EXIT'
-      ? 'Salida permitida'
-      : 'Acceso permitido'
-    : kind === 'EXIT'
-      ? 'Salida denegada'
-      : 'Acceso denegado';
+  // Estados semánticos
+  const isAllowed = ok === true;
+  const lowerReason = (reason || "").toLowerCase();
 
-  const subRoleLabel =
-    owner?.institutionalType &&
+  // Casos que consideramos "advertencia" (amarillo):
+  // usuario ya dentro / ya fuera / invitado aún no entra / visita completada
+  const isWarning =
+    !isAllowed &&
     (
-      {
-        STUDENT: 'Alumno',
-        TEACHER: 'Docente',
-        PAE: 'PAE',
-      }[owner.institutionalType] || owner.institutionalType
+      lowerReason.includes("ya está dentro") ||
+      lowerReason.includes("ya esta dentro") ||
+      lowerReason.includes("ya está fuera") ||
+      lowerReason.includes("ya esta fuera") ||
+      lowerReason.includes("aún no ha entrado") ||
+      lowerReason.includes("aun no ha entrado") ||
+      lowerReason.includes("visita completada")
     );
+
+  // Todo lo demás que no es ok ni warning es rechazo "duro" (rojo)
+  const isHardDeny = !isAllowed && !isWarning;
+
+  // Clases de color
+  const bannerClass = isAllowed
+    ? "bg-success"
+    : isWarning
+    ? "bg-warning text-dark"
+    : "bg-danger";
+
+  // Texto del encabezado
+  const heading = isAllowed
+    ? kind === "EXIT"
+      ? "Salida permitida"
+      : "Acceso permitido"
+    : isWarning
+    ? "Advertencia"
+    : kind === "EXIT"
+    ? "Salida denegada"
+    : "Acceso denegado";
+
+  // Mostrar tipo de usuario (incluido institutionalType bonito)
+  const roleLabel = {
+    ADMIN: "Administrador",
+    USER: "Usuario institucional",
+    GUARD: "Guardia",
+    GUEST: "Invitado",
+  };
+
+  const institutionalLabel = {
+    STUDENT: "Alumno",
+    TEACHER: "Docente",
+    PAE: "PAE",
+  };
 
   return (
     <div className="container mt-4" style={{ maxWidth: 420 }}>
-      {/* Franja roja / verde arriba */}
-      <div
-        className={`rounded-3 text-white text-center fw-bold py-2 ${
-          approved ? 'bg-success' : 'bg-danger'
-        }`}
-      >
+      {/* Banner de estado */}
+      <div className={`rounded-3 text-white text-center fw-bold py-2 ${bannerClass}`}>
         {heading}
       </div>
 
-      {/* Tarjeta gris central */}
+      {/* Tarjeta de datos */}
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
-        {/* Mensaje principal */}
-        <div style={{ whiteSpace: 'pre-line' }} className="mb-3">
-          <p className="mb-0">
-            {reason ||
-              (approved
-                ? 'QR válido.'
-                : 'Código QR duplicado/expirado. Solicita un QR nuevo o credencial.')}
+        {/* Mensaje de razón */}
+        {!isAllowed && (
+          <p className="mb-3 text-center fw-semibold" style={{ whiteSpace: "pre-line" }}>
+            {reason || "Operación no válida"}
           </p>
-          {!approved && (
-            <p className="mt-3 mb-0">Última opción: registro manual.</p>
-          )}
-        </div>
+        )}
 
-        {/* Datos del dueño del QR (se muestran tanto en éxito como en error si existen) */}
+        {/* Datos del dueño del QR (solo si existe) */}
         {owner && (
           <>
-            <hr className="border-light" />
             <p className="mb-1">
-              <b>Tipo:</b> {roleLabel[owner.role] || '—'}
-            </p>
-            <p className="mb-1">
-              <b>Nombre:</b>{' '}
-              {[
-                owner.firstName,
-                owner.lastNameP,
-                owner.lastNameM,
-              ]
-                .filter(Boolean)
-                .join(' ') || owner.name || '—'}
+              <b>Tipo:</b>{" "}
+              {owner.kind === "GUEST" || owner.role === "GUEST"
+                ? "Invitado"
+                : `Usuario institucional — ${
+                    institutionalLabel[owner.institutionalType] || "—"
+                  }`}
             </p>
 
-            {owner.role === 'GUEST' ? (
-              <>
-                <p className="mb-1">
-                  <b>CURP:</b> {owner.curp || '—'}
-                </p>
-                <p className="mb-1">
-                  <b>Motivo visita:</b> {owner.reason || '—'}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="mb-1">
-                  <b>No. boleta:</b> {owner.boleta || '—'}
-                </p>
-                <p className="mb-1">
-                  <b>Email:</b> {owner.email || '—'}
-                </p>
-                {subRoleLabel && (
-                  <p className="mb-1">
-                    <b>Sub-rol:</b> {subRoleLabel}
-                  </p>
-                )}
-              </>
+            <p className="mb-1">
+              <b>Nombre:</b>{" "}
+              {[owner.firstName, owner.lastNameP, owner.lastNameM]
+                .filter(Boolean)
+                .join(" ") || owner.name || "—"}
+            </p>
+
+            {owner.boleta && (
+              <p className="mb-1">
+                <b>No. boleta:</b> {owner.boleta}
+              </p>
             )}
 
-            {/* Aquí luego puedes poner la FOTO real, por ahora avatar con inicial */}
+            {owner.email && (
+              <p className="mb-1">
+                <b>Email:</b> {owner.email}
+              </p>
+            )}
+
+            {owner.curp && (
+              <p className="mb-1">
+                <b>CURP:</b> {owner.curp}
+              </p>
+            )}
+
+            {owner.reason && (
+              <p className="mb-1">
+                <b>Motivo visita:</b> {owner.reason}
+              </p>
+            )}
+
+            {/* Foto si la hay */}
             <div className="d-flex justify-content-center mt-3">
               <div
                 style={{
                   width: 160,
                   height: 160,
-                  borderRadius: '50%',
-                  background: '#d9a89c',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#333',
-                  fontWeight: 'bold',
-                  fontSize: '3rem',
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  background: "#d9a89c",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                {(owner.firstName?.[0] || owner.name?.[0] || 'U').toUpperCase()}
+                {owner.photoUrl ? (
+                  <img
+                    src={owner.photoUrl}
+                    alt="Foto del usuario"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <span style={{ fontSize: "3rem", color: "#333", fontWeight: "bold" }}>
+                    {(owner.firstName?.[0] || owner.name?.[0] || "U").toUpperCase()}
+                  </span>
+                )}
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Botones inferiores grandes */}
+      {/* Botones */}
       <div className="d-grid gap-2 mt-4">
-        <button
-          type="button"
-          className="btn btn-primary btn-lg"
-          onClick={onScanAgain}
-        >
+        <button type="button" className="btn btn-primary btn-lg" onClick={onScanAgain}>
           Escanear nuevo código
         </button>
-        <button
-          type="button"
-          className="btn btn-outline-primary"
-          onClick={onBack}
-        >
+        <button type="button" className="btn btn-outline-primary" onClick={onBack}>
           Regresar al menú
         </button>
       </div>

@@ -6,8 +6,16 @@ import { useMemo, useEffect, useState } from 'react';
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
   const [guestVisit, setGuestVisit] = useState(null);
+
+  // Leemos user del localStorage
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem('user') || 'null');
+  } catch {
+    user = null;
+  }
+
   const isLogin = location.pathname === '/login';
 
   useEffect(() => {
@@ -59,13 +67,18 @@ export default function Navbar() {
 
   const isGuestDashboard = location.pathname.startsWith('/guest') && !!guestVisit;
 
-  //Navbar del ADMIN sin "Generar QR" ni "Escaneo"
+  // Navbar del ADMIN sin "Generar QR" ni "Escaneo"
   const isAdmin = user?.role === 'ADMIN';
   const adminLinks = [
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/admin/users', label: 'Usuarios' },
     { path: '/access-report', label: 'Reportes' },
   ];
+
+  // 👇 Aquí centralizamos la lógica de "debe cambiar contraseña"
+  const mustChangePassword = !!user?.mustChangePassword; // booleano robusto
+  const isInstitutionalUser = user?.role === 'USER';
+  const showChangePassword = isInstitutionalUser && mustChangePassword;
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
@@ -118,7 +131,6 @@ export default function Navbar() {
                   </li>
                 ))}
 
-                {/* Enlace adicional para importar base de datos (solo ADMIN) */}
                 <li className="nav-item">
                   <Link to="/import-db" className="nav-link btn btn-sm btn-outline-light" style={{ pointerEvents: 'auto' }}>
                     Importar BD
@@ -140,6 +152,15 @@ export default function Navbar() {
                     Bienvenido(a), {user.name}
                   </span>
                 </li>
+
+                {showChangePassword && (
+                  <li className="nav-item">
+                    <Link className="nav-link" to="/change-password" style={{ pointerEvents: 'auto', color: 'white' }}>
+                      Cambiar contraseña
+                    </Link>
+                  </li>
+                )}
+
                 <li className="nav-item">
                   <button className="btn btn-outline-light btn-sm" onClick={logout} style={{ pointerEvents: 'auto' }}>
                     Cerrar sesión

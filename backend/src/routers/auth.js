@@ -140,27 +140,66 @@ router.post('/login', async (req, res) => {
           password: await bcrypt.hash(superPass, 10),
           role: 'ADMIN'
         },
-        select: { id:true, name:true, email:true, role:true, boleta:true }
+        select: { 
+          id: true, 
+          name: true, 
+          email: true, 
+          role: true, 
+          boleta: true,
+          institutionalType: true,
+          mustChangePassword: true
+        }
       });
 
-      const payload = { id: superUser.id, role: superUser.role, email: superUser.email, name: superUser.name };
+      const payload = { 
+        id: superUser.id, 
+        role: superUser.role, 
+        email: superUser.email, 
+        name: superUser.name,
+        boleta: superUser.boleta,
+        institutionalType: superUser.institutionalType,
+        mustChangePassword: superUser.mustChangePassword || false // super admin no necesita cambiar
+      };
       const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
-      const body = { user: payload };
+      const body = { ok: true, user: payload };
       if (process.env.NODE_ENV !== 'production') body.token = token;
       return res.cookie('token', token, cookieOptions).json(body);
     }
 
     // flujo normal (no super admin)
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        boleta: true,
+        institutionalType: true,
+        mustChangePassword: true,
+        password: true  // necesario para comparar
+      }
+    });
     if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-    const payload = { id: user.id, role: user.role, email: user.email, name: user.name };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
-    const body = { user: payload };
+    // JWT payload sin password
+    const userPayload = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      boleta: user.boleta,
+      institutionalType: user.institutionalType,
+      mustChangePassword: user.mustChangePassword
+    };
+
+    const token = jwt.sign(userPayload, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const body = { ok: true, user: userPayload };
     if (process.env.NODE_ENV !== 'production') body.token = token;
+
     return res.cookie('token', token, cookieOptions).json(body);
   } catch (e) {
     console.error(e);
@@ -267,6 +306,62 @@ router.post('/reset-password', async (req, res) => {
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: 'No se pudo restablecer la contraseña' });
+  }
+});
+
+// POST /api/auth/change-password
+// Body: { currentPassword, newPassword }
+router.post('/change-password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    const userId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Debes indicar tu contraseña actual y la nueva.' });
+    }
+
+    if (!RE_PASSWORD.test(newPassword)) {
+      return res.status(400).json({
+        error: 'La nueva contraseña no cumple con los requisitos.',
+        details: 'Debe tener al menos 12 caracteres, con mayúsculas, minúsculas, número y símbolo.'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true, mustChangePassword: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) {
+      return res.status(400).json({ error: 'La contraseña actual no es correcta.' });
+    }
+
+    const samePwd = await bcrypt.compare(newPassword, user.password);
+    if (samePwd) {
+      return res.status(400).json({
+        error: 'La nueva contraseña no puede ser igual a la actual.'
+      });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hash,
+        mustChangePassword: false, // 👈 importante: ya no mostrar contraseña por defecto
+      }
+    });
+
+    return res.json({ ok: true, message: 'Contraseña actualizada correctamente.' });
+  } catch (e) {
+    console.error('CHANGE PASSWORD ERROR:', e);
+    return res.status(500).json({ error: 'No se pudo cambiar la contraseña.' });
   }
 });
 

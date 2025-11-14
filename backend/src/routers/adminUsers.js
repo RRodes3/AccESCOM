@@ -29,6 +29,40 @@ const buildFullName = (firstName, lastNameP, lastNameM) => {
 // Para el sub-rol institucional (si lo envían)
 const INSTITUTIONAL_TYPES = ['STUDENT', 'TEACHER', 'PAE'];
 
+// helpers iguales a adminImport
+function stripAccents(str = '') {
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function capitalize(str = '') {
+  const s = stripAccents(String(str).trim().toLowerCase());
+  if (!s) return '';
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+function buildDefaultPassword({ firstName, lastNameP, boleta }) {
+  const fn = String(firstName || 'Usuario').trim().split(/\s+/)[0];
+  const ln = String(lastNameP || 'ESCOM').trim().split(/\s+/)[0];
+  const cleanFn = stripAccents(fn);
+  const cleanLn = stripAccents(ln);
+
+  const initial = cleanFn[0] ? cleanFn[0].toLowerCase() : 'u';
+  const lastLower = cleanLn.toLowerCase();
+  const digits = String(boleta || '').replace(/\D/g, '');
+  const tail = digits.slice(-4) || '0000';
+  const nameCap = capitalize(fn);
+
+  let pwd = `${initial}${lastLower}${tail}${nameCap}.`;
+
+  if (!RE_PASSWORD.test(pwd)) {
+    pwd = pwd + '!2025aA1';
+  }
+
+  return pwd;
+}
+
 /** POST /api/admin/users  (solo ADMIN)  crea ADMIN/GUARD/USER */
 router.post('/users', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
@@ -113,7 +147,7 @@ router.get('/users', auth, requireRole(['ADMIN']), async (req, res) => {
       where.isActive = true;
     }
 
-    const [items, total] = await Promise.all([
+    const [itemsRaw, total] = await Promise.all([
       prisma.user.findMany({
         where,
         take,
@@ -122,16 +156,37 @@ router.get('/users', auth, requireRole(['ADMIN']), async (req, res) => {
         select: {
           id: true,
           boleta: true,
+          firstName: true,
+          lastNameP: true,
+          lastNameM: true,
           name: true,
           email: true,
           role: true,
-          institutionalType: true,
           isActive: true,
-          createdAt: true
+          mustChangePassword: true,      // 👈 nuevo
+          institutionalType: true,       // opcional, por si lo usas en la tabla
+          createdAt: true,
         }
       }),
       prisma.user.count({ where })
     ]);
+
+    // Mapeamos para agregar defaultPassword solo si mustChangePassword = true
+    const items = itemsRaw.map((u) => {
+      let defaultPassword = null;
+      if (u.mustChangePassword && u.role === 'USER') {
+        defaultPassword = buildDefaultPassword({
+          firstName: u.firstName,
+          lastNameP: u.lastNameP,
+          boleta: u.boleta,
+        });
+      }
+
+      return {
+        ...u,
+        defaultPassword,  // 👈 solo visible al ADMIN en la API
+      };
+    });
 
     res.json({ items, total });
   } catch (e) {

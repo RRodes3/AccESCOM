@@ -4,6 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));
 app.use('/api/guest', require('./src/routers/guest'));
 app.use('/api/admin/import', require('./src/routers/adminImport'));
+app.use('/photos', express.static('public/photos'));
 
 // (opcional)
 app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));

@@ -36,7 +36,7 @@ async function ensureActivePass(userId, kind, ttlMinutes = TTL_MINUTES) {
 
   if (pass) return pass;
 
-  // 2) Si hay activo pero vencido, márcalo EXPIRED (por si quedó colgado)
+  // 2) Si hay activo pero
   const last = await prisma.qRPass.findFirst({
     where: { userId, kind, status: 'ACTIVE' },
     orderBy: { createdAt: 'desc' },
@@ -257,45 +257,79 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
     if (pass.userId) {
       const u = pass.user; // traído por include
 
-      // coherencia adentro/afuera (como ya tienes)
+      // owner siempre disponible (permitido o denegado) con foto
+      const owner = {
+        id: u.id,
+        role: u.role,
+        name: u.name,
+        boleta: u.boleta,
+        firstName: u.firstName,
+        lastNameP: u.lastNameP,
+        lastNameM: u.lastNameM,
+        email: u.email,
+        institutionalType: u.institutionalType || null,
+        photoUrl: u.photoUrl || null,
+      };
+
+      const baseLog = {
+        userId: u.id,
+        guestId: null,
+        qrId: pass.id,
+        kind: pass.kind,
+        guardId: req.user.id,
+      };
+
+      // coherencia adentro/afuera → DENEGADO, pero con owner
       if (pass.kind === 'ENTRY' && u.accessState === 'INSIDE') {
+        await prisma.accessLog.create({
+          data: {
+            ...baseLog,
+            action: 'VALIDATE_DENY',
+          },
+        });
         return res.status(400).json({
           ok: false,
           reason: 'Usuario ya está dentro.',
           owner,
+          pass: { kind: pass.kind },
         });
       }
+
       if (pass.kind === 'EXIT' && u.accessState === 'OUTSIDE') {
+        await prisma.accessLog.create({
+          data: {
+            ...baseLog,
+            action: 'VALIDATE_DENY',
+          },
+        });
         return res.status(400).json({
           ok: false,
           reason: 'Usuario ya está fuera.',
           owner,
+          pass: { kind: pass.kind },
         });
       }
 
+      // Si llegamos aquí, el movimiento es coherente → PERMITIR
       await prisma.user.update({
         where: { id: u.id },
-        data: {
-          accessState: u.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE',
-        },
+        data: { accessState: u.accessState === 'OUTSIDE' ? 'INSIDE' : 'OUTSIDE' },
       });
+
       await prisma.accessLog.create({
         data: {
-          userId: u.id,
-          qrId: pass.id,
-          kind: pass.kind,
+          ...baseLog,
           action: 'VALIDATE_ALLOW',
-          guardId: req.user.id,
         },
       });
 
-      const ownerRes = buildOwnerFromPass(pass);
       return res.json({
         ok: true,
-        owner: ownerRes,
+        owner,
         pass: { kind: pass.kind },
       });
     }
+
 
     // CASE B) QR de INVITADO (UN SOLO USO → marcar USED)
     if (pass.guestId) {
@@ -509,10 +543,16 @@ router.post('/scan', auth, requireRole(['GUARD','ADMIN']), async (req, res) => {
     // Busca el QR en la tabla de pases (usa qRPass para mantener consistencia con este archivo)
     const pass = await prisma.qRPass.findUnique({
       where: { code },
-      include: { 
-        user: { select: { id:true, name:true, boleta:true, email:true, institutionalType:true } },
-        guest:{ select: { id:true, firstName:true, lastNameP:true, lastNameM:true, curp:true, reason:true } },
-      }
+      include: {
+        user: {
+          select: {
+            id: true, role: true, name: true, boleta: true,
+            firstName: true, lastNameP: true, lastNameM: true,
+            email: true, photoUrl: true, accessState: true
+          }
+        },
+        guest: true
+      },
     });
 
     let result = 'INVALID_QR';
@@ -568,12 +608,17 @@ router.post('/scan', auth, requireRole(['GUARD','ADMIN']), async (req, res) => {
         boleta: pass.user.boleta,
         email: pass.user.email,
         institutionalType: pass.user.institutionalType || null,
+        photoUrl: pass.user.photoUrl || null,  
       };
     } else if (pass?.guest) {
       owner = {
-        kind: 'GUEST',
+        role: 'GUEST',
+        kind: 'GUEST',  // mantener por compatibilidad
         id: pass.guest.id,
         name: [pass.guest.firstName, pass.guest.lastNameP, pass.guest.lastNameM].filter(Boolean).join(' '),
+        firstName: pass.guest.firstName,
+        lastNameP: pass.guest.lastNameP,
+        lastNameM: pass.guest.lastNameM,
         curp: pass.guest.curp || null,
         reason: pass.guest.reason || null,
       };
@@ -610,13 +655,15 @@ function buildOwnerFromPass(pass) {
       boleta: u.boleta,
       email: u.email,
       institutionalType: u.institutionalType || null,
+      photoUrl: u.photoUrl || null,  // 👈 NUEVO
     };
   }
 
   if (pass.guest) {
     const g = pass.guest;
     return {
-      kind: 'GUEST',
+      role: 'GUEST',
+      kind: 'GUEST',  // mantener por compatibilidad
       id: g.id,
       name: `${g.firstName} ${g.lastNameP} ${g.lastNameM || ''}`.trim(),
       firstName: g.firstName,

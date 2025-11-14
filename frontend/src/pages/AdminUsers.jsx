@@ -203,14 +203,15 @@ export default function AdminUsers() {
               <th>Sub-rol</th>
               <th>Estado</th>
               <th>Creado</th>
+              <th>Contraseña por defecto</th>
               <th style={{width:260}}>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8}>Cargando…</td></tr>
+              <tr><td colSpan={9}>Cargando…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={8}>Sin resultados</td></tr>
+              <tr><td colSpan={9}>Sin resultados</td></tr>
             ) : items.map(u => (
               <tr key={u.id}>
                 <td>{u.boleta}</td>
@@ -224,6 +225,13 @@ export default function AdminUsers() {
                     : <span className="badge bg-secondary">Inactivo</span>}
                 </td>
                 <td>{new Date(u.createdAt).toLocaleString()}</td>
+                <td>
+                  {u.defaultPassword ? (
+                    <code className="bg-light p-1 rounded">{u.defaultPassword}</code>
+                  ) : (
+                    <span className="text-muted">—</span>
+                  )}
+                </td>
                 <td className="d-flex flex-wrap gap-2">
                   {u.isActive ? (
                     <button className="btn btn-sm btn-warning" onClick={()=>onDeactivate(u.id)}>

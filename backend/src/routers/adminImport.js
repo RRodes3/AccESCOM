@@ -1,10 +1,11 @@
 // backend/src/routers/adminImport.js
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, InstitutionalType } = require('@prisma/client');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
+const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
@@ -29,6 +30,7 @@ const RE_LETTERS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 const RE_BOLETA = /^\d{10}$/;
 const RE_EMAIL_DOT = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
+const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const isInstitutional = (email) =>
   RE_EMAIL_DOT.test((email || '').trim()) ||
   RE_EMAIL_COMPACT.test((email || '').trim());
@@ -59,22 +61,74 @@ function readSheetToJson(buffer) {
   return rows;
 }
 
+// quitar acentos y normalizar
+function stripAccents(str = '') {
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+// capitaliza primera letra
+function capitalize(str = '') {
+  const s = stripAccents(String(str).trim().toLowerCase());
+  if (!s) return '';
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+/**
+ * Genera una contraseña por defecto a partir de:
+ *  - inicial del nombre (minúscula)
+ *  - apellido paterno (minúsculas)
+ *  - últimos 4 dígitos de la boleta
+ *  - nombre capitalizado
+ *  - punto final.
+ *
+ * Ej: Raúl Rodas Rodríguez, boleta 2022630465 → rrodas0465Raul.
+ */
+function buildDefaultPassword({ firstName, lastNameP, boleta }) {
+  const fn = String(firstName || 'Usuario').trim().split(/\s+/)[0];
+  const ln = String(lastNameP || 'ESCOM').trim().split(/\s+/)[0];
+  const cleanFn = stripAccents(fn);
+  const cleanLn = stripAccents(ln);
+
+  const initial = cleanFn[0] ? cleanFn[0].toLowerCase() : 'u';
+  const lastLower = cleanLn.toLowerCase();
+  const digits = String(boleta || '').replace(/\D/g, '');
+  const tail = digits.slice(-4) || '0000';
+  const nameCap = capitalize(fn);
+
+  let pwd = `${initial}${lastLower}${tail}${nameCap}.`; // ej: rrodas0465Raul.
+
+  // por si acaso, reforzamos si no pasa la regex
+  if (!RE_PASSWORD.test(pwd)) {
+    pwd = pwd + '!2025aA1';
+  }
+
+  return pwd;
+}
+
+// función para mapear los tipos institucionales del CSV a los enums de Prisma
+function mapInstitutionalTypeForPrisma(raw) {
+  if (!raw) return null;
+  const val = String(raw).toUpperCase().trim();
+
+  // Intentamos mapear a las claves del enum generado por Prisma
+  if (val === 'STUDENT' && InstitutionalType && InstitutionalType.STUDENT) return InstitutionalType.STUDENT;
+  if (val === 'TEACHER' && InstitutionalType && InstitutionalType.TEACHER) return InstitutionalType.TEACHER;
+  if (val === 'PAE' && InstitutionalType && InstitutionalType.PAE) return InstitutionalType.PAE;
+
+  // Si no coincide, devolvemos null (que tratamos luego como "no setear")
+  return null;
+}
+
 // ───── IMPORTAR USUARIOS: POST /api/admin/import/users ────────────────────────
 router.post(
   '/users',
   auth,
   requireRole(['ADMIN']),
-  upload.single('file'), // 👈 MUY IMPORTANTE
+  upload.single('file'),
   async (req, res) => {
     const dryRun = String(req.query.dryRun || '').toLowerCase() === 'true';
-
-    // Debug para ver qué llega
-    console.log('IMPORT /users headers:', req.headers['content-type']);
-    console.log('IMPORT /users file:', req.file && {
-      fieldname: req.file.fieldname,
-      originalname: req.file.originalname,
-      size: req.file.size,
-    });
 
     if (!req.file) {
       return res.status(400).json({ error: 'Falta archivo' });
@@ -87,11 +141,11 @@ router.post(
       }
 
       const errors = [];
-      const toCreate = [];
+      const validRows = [];
 
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        const line = i + 2; // asumiendo encabezado en la línea 1
+        const line = i + 2; // encabezado en línea 1
 
         const boleta = String(r.boleta || '').trim();
         const firstName = sanitizeName(r.firstName);
@@ -103,6 +157,9 @@ router.post(
           .toString()
           .toUpperCase()
           .trim(); // STUDENT/TEACHER/PAE
+
+        // NUEVO: leer photoUrl si viene en el archivo
+        const photoUrl = (r.photoUrl || '').toString().trim() || null;
 
         // Si no viene sub-rol y es USER, lo inferimos por dominio
         if (!institutionalType && role === 'USER') {
@@ -126,7 +183,11 @@ router.post(
           rowErr.institutionalType = 'Debe ser STUDENT/TEACHER/PAE';
         }
 
-        // Si ya hay errores de formato, no buscamos en la BD
+        // Validación opcional de photoUrl (muy ligera)
+        if (photoUrl && !/^https?:\/\/|^\//i.test(photoUrl)) {
+          rowErr.photoUrl = 'photoUrl debe ser una URL absoluta o empezar con /';
+        }
+
         if (Object.keys(rowErr).length) {
           errors.push({ line, errors: rowErr, row: r });
           continue;
@@ -135,10 +196,7 @@ router.post(
         // 🔎 Revisa si ya existe alguien con esa boleta o correo
         const existing = await prisma.user.findFirst({
           where: {
-            OR: [
-              { boleta },
-              { email },
-            ],
+            OR: [{ boleta }, { email }],
           },
         });
 
@@ -148,11 +206,10 @@ router.post(
           if (existing.email === email) dupErr.email = 'Este correo ya está registrado';
 
           errors.push({ line, errors: dupErr, row: r });
-          continue; // NO se agrega a toCreate
+          continue;
         }
 
-        // Si todo OK y no hay duplicados, se prepara para crear
-        toCreate.push({
+        validRows.push({
           boleta,
           firstName,
           lastNameP,
@@ -160,10 +217,30 @@ router.post(
           email,
           role,
           institutionalType,
+          photoUrl,
         });
       }
 
-      // Si hay cualquier error (formato o duplicados), devolvemos resumen
+      const toCreate = validRows.map((r) => {
+        const plainPassword = buildDefaultPassword({
+          firstName: r.firstName,
+          lastNameP: r.lastNameP,
+          boleta: r.boleta,
+        });
+
+        return {
+          boleta: r.boleta,
+          firstName: r.firstName,
+          lastNameP: r.lastNameP,
+          lastNameM: r.lastNameM,
+          email: r.email,
+          role: r.role,
+          institutionalType: r.institutionalType,
+          photoUrl: r.photoUrl,
+          _plainPassword: plainPassword,
+        };
+      });
+
       if (errors.length) {
         return res.status(400).json({
           error: 'Validación fallida',
@@ -176,51 +253,79 @@ router.post(
         });
       }
 
-      // Si solo queremos validar (dry-run)
       if (dryRun) {
         return res.json({
-          total: rows.length,
-          willCreateOrUpdate: toCreate.length,
+          ok: errors.length === 0,
+          summary: {
+            total: rows.length,
+            valid: toCreate.length,
+            errors: errors.length,
+            samplePasswords: toCreate.slice(0, 3).map((u) => ({
+              email: u.email,
+              boleta: u.boleta,
+              passwordEjemplo: u._plainPassword,
+            })),
+          },
+          errors,
         });
       }
 
-      // 🚀 Crear usuarios NUEVOS (ya filtramos duplicados arriba)
-      const results = [];
-      for (const r of toCreate) {
-        const instType = r.role === 'USER' ? (r.institutionalType || null) : null;
-        const created = await prisma.user.create({
-          data: {
-            boleta: r.boleta,
-            firstName: r.firstName,
-            lastNameP: r.lastNameP,
-            lastNameM: r.lastNameM,
-            name: buildFullName(r.firstName, r.lastNameP, r.lastNameM),
-            email: r.email,
-            role: r.role,
-            institutionalType: instType,
-            password:
-              'Temp#2025_' + Math.random().toString(36).slice(2, 8) + 'A!',
-            isActive: true,
-          },
-          select: {
-            id: true,
-            email: true,
-            role: true,
-            boleta: true,
-            institutionalType: true,
-          },
-        });
-        results.push(created);
-      }
+      const withHashes = await Promise.all(
+        toCreate.map(async (u) => ({
+          ...u,
+          passwordHash: await bcrypt.hash(u._plainPassword, 10),
+        }))
+      );
+
+      const results = await prisma.$transaction(
+        withHashes.map((u) => {
+          const instTypeEnum = mapInstitutionalTypeForPrisma(u.institutionalType);
+
+          return prisma.user.upsert({
+            where: { email: u.email },
+            update: {
+              firstName: u.firstName,
+              lastNameP: u.lastNameP,
+              lastNameM: u.lastNameM,
+              boleta: u.boleta,
+              role: u.role,
+              institutionalType: instTypeEnum ?? undefined,
+              password: u.passwordHash,
+              name: buildFullName(u.firstName, u.lastNameP, u.lastNameM),
+              photoUrl: u.photoUrl || undefined,
+            },
+            create: {
+              firstName: u.firstName,
+              lastNameP: u.lastNameP,
+              lastNameM: u.lastNameM,
+              boleta: u.boleta,
+              email: u.email,
+              role: u.role,
+              institutionalType: instTypeEnum ?? undefined,
+              password: u.passwordHash,
+              name: buildFullName(u.firstName, u.lastNameP, u.lastNameM),
+              isActive: true,
+              mustChangePassword: u.role === 'USER',
+              photoUrl: u.photoUrl || null,
+            },
+            select: {
+              id: true,
+              email: true,
+              role: true,
+              boleta: true,
+              institutionalType: true,
+              photoUrl: true,
+            },
+          });
+        })
+      );
 
       return res.json({
         total: rows.length,
-        upserted: results.length, // mismo nombre que ya ves en el front
+        upserted: results.length,
       });
     } catch (e) {
       console.error('IMPORT USERS ERROR:', e);
-
-      // Mandar más detalle al frontend para depurar
       return res.status(500).json({
         error: 'No se pudo importar',
         details: e.message || null,
@@ -228,7 +333,8 @@ router.post(
         meta: e.meta || null,
       });
     }
-  });
+  }
+);
 
 
 module.exports = router;
