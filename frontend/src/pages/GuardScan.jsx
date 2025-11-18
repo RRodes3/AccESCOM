@@ -24,6 +24,7 @@ function normalizeScanPayload(raw) {
   if (!raw) raw = {};
   return {
     ok: !!raw.ok,
+    result: raw.result || null,
     kind: raw.pass?.kind || raw.kind || null,
     owner: raw.owner || null,
     reason: raw.reason || '',
@@ -34,59 +35,56 @@ function normalizeScanPayload(raw) {
 function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   // Estados semánticos
   const isAllowed = ok === true;
-  const lowerReason = (reason || "").toLowerCase();
+  const lowerReason = (reason || '').toLowerCase();
 
-  // Casos que consideramos "advertencia" (amarillo):
-  // usuario ya dentro / ya fuera / invitado aún no entra / visita completada
+  // Casos que consideramos "advertencia" (amarillo)
   const isWarning =
     !isAllowed &&
     (
-      lowerReason.includes("ya está dentro") ||
-      lowerReason.includes("ya esta dentro") ||
-      lowerReason.includes("ya está fuera") ||
-      lowerReason.includes("ya esta fuera") ||
-      lowerReason.includes("aún no ha entrado") ||
-      lowerReason.includes("aun no ha entrado") ||
-      lowerReason.includes("visita completada")
+      // Usuario institucional ya dentro / fuera
+      lowerReason.includes('ya está dentro') ||
+      lowerReason.includes('ya esta dentro') ||
+      lowerReason.includes('se encuentra dentro') ||
+      lowerReason.includes('se encuentra fuera') ||
+      lowerReason.includes('ya está fuera') ||
+      lowerReason.includes('ya esta fuera') ||
+
+      // Usuario aún no ha entrado
+      lowerReason.includes('aún no ha entrado') ||
+      lowerReason.includes('aun no ha entrado') ||
+
+      // Visita de invitado ya completada
+      lowerReason.includes('visita completada')
     );
 
-  // Todo lo demás que no es ok ni warning es rechazo "duro" (rojo)
   const isHardDeny = !isAllowed && !isWarning;
 
-  // Clases de color
+  // Colores de franja
   const bannerClass = isAllowed
-    ? "bg-success"
+    ? 'bg-success'
     : isWarning
-    ? "bg-warning text-dark"
-    : "bg-danger";
+    ? 'bg-warning text-dark'
+    : 'bg-danger';
 
   // Texto del encabezado
   const heading = isAllowed
-    ? kind === "EXIT"
-      ? "Salida permitida"
-      : "Acceso permitido"
+    ? kind === 'EXIT'
+      ? 'Salida permitida'
+      : 'Acceso permitido'
     : isWarning
-    ? "Advertencia"
-    : kind === "EXIT"
-    ? "Salida denegada"
-    : "Acceso denegado";
-
-  // Mostrar tipo de usuario (incluido institutionalType bonito)
-  const roleLabel = {
-    ADMIN: "Administrador",
-    USER: "Usuario institucional",
-    GUARD: "Guardia",
-    GUEST: "Invitado",
-  };
+    ? 'Advertencia'
+    : kind === 'EXIT'
+    ? 'Salida denegada'
+    : 'Acceso denegado';
 
   const institutionalLabel = {
-    STUDENT: "Alumno",
-    TEACHER: "Docente",
-    PAE: "PAE",
+    STUDENT: 'Alumno',
+    TEACHER: 'Docente',
+    PAE: 'PAE',
   };
 
   return (
-    <div className="container mt-4" style={{ maxWidth: 420 }}>
+    <div className="container mt-3 scan-result-card" style={{ maxWidth: 560 }}>
       {/* Banner de estado */}
       <div className={`rounded-3 text-white text-center fw-bold py-2 ${bannerClass}`}>
         {heading}
@@ -96,8 +94,8 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
       <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3">
         {/* Mensaje de razón */}
         {!isAllowed && (
-          <p className="mb-3 text-center fw-semibold" style={{ whiteSpace: "pre-line" }}>
-            {reason || "Operación no válida"}
+          <p className="mb-3 text-center fw-semibold" style={{ whiteSpace: 'pre-line' }}>
+            {reason || 'Operación no válida'}
           </p>
         )}
 
@@ -105,19 +103,19 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
         {owner && (
           <>
             <p className="mb-1">
-              <b>Tipo:</b>{" "}
-              {owner.kind === "GUEST" || owner.role === "GUEST"
-                ? "Invitado"
+              <b>Tipo:</b>{' '}
+              {owner.kind === 'GUEST' || owner.role === 'GUEST'
+                ? 'Invitado'
                 : `Usuario institucional — ${
-                    institutionalLabel[owner.institutionalType] || "—"
+                    institutionalLabel[owner.institutionalType] || '—'
                   }`}
             </p>
 
             <p className="mb-1">
-              <b>Nombre:</b>{" "}
+              <b>Nombre:</b>{' '}
               {[owner.firstName, owner.lastNameP, owner.lastNameM]
                 .filter(Boolean)
-                .join(" ") || owner.name || "—"}
+                .join(' ') || owner.name || '—'}
             </p>
 
             {owner.boleta && (
@@ -150,23 +148,29 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
                 style={{
                   width: 160,
                   height: 160,
-                  borderRadius: "50%",
-                  overflow: "hidden",
-                  background: "#d9a89c",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  background: '#d9a89c',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
                 {owner.photoUrl ? (
                   <img
                     src={owner.photoUrl}
                     alt="Foto del usuario"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span style={{ fontSize: "3rem", color: "#333", fontWeight: "bold" }}>
-                    {(owner.firstName?.[0] || owner.name?.[0] || "U").toUpperCase()}
+                  <span
+                    style={{
+                      fontSize: '3rem',
+                      color: '#333',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {(owner.firstName?.[0] || owner.name?.[0] || 'U').toUpperCase()}
                   </span>
                 )}
               </div>
@@ -193,10 +197,9 @@ export default function GuardScan() {
   const regionId = 'reader';
   const navigate = useNavigate();
 
-  // Modo: 'reader' (lector USB HID) | 'camera' (webcam)
+  // 'reader' (lector USB HID) | 'camera' (webcam)
   const [mode, setMode] = useState('reader');
 
-  // html5-qrcode refs
   const scannerRef = useRef(null);
   const startingRef = useRef(false);
   const startedRef = useRef(false);
@@ -205,7 +208,6 @@ export default function GuardScan() {
   const [msg, setMsg] = useState('');
   const [result, setResult] = useState(null);
 
-  // detección de lector HID
   const [readerReady, setReaderReady] = useState(false);
   const bufferRef = useRef({ str: '', last: 0 });
 
@@ -235,35 +237,7 @@ export default function GuardScan() {
     });
   };
 
-  /* ---------- validación común (para ambos modos) ---------- */
-  const handleCode = useCallback(async (code) => {
-    setMsg('Validando…');
-
-    // si veníamos de cámara, pausamos
-    if (startedRef.current) {
-      try {
-        await scannerRef.current?.pause?.();
-      } catch {}
-    }
-
-    try {
-      const { data } = await api.post('/qr/validate', { code });
-      const payload = normalizeScanPayload(data);
-      playFeedback(payload.ok);
-      setResult(payload);
-    } catch (e) {
-      const data = e?.response?.data || {};
-      const payload = normalizeScanPayload(data);
-      playFeedback(false);
-      setResult(payload);
-    } finally {
-      setMsg('');
-      // detenemos cámara si estaba activa
-      if (startedRef.current) await stopScanner();
-    }
-  }, []); // eslint-disable-line
-
-  /* ---------- Cámara ---------- */
+  /* ---------- stopScanner (cámara) ---------- */
   const stopScanner = useCallback(async () => {
     if (!startedRef.current || !scannerRef.current) {
       hardStopCamera();
@@ -284,6 +258,30 @@ export default function GuardScan() {
     }
   }, []);
 
+  /* ---------- Validar código (común a cámara y lector) ---------- */
+  const handleValidate = useCallback(async (code) => {
+    try {
+      const { data } = await api.post('/qr/validate', { code });
+      const normalized = normalizeScanPayload(data);
+      setResult(normalized);
+      playFeedback(!!normalized.ok);
+      return data;
+    } catch (e) {
+      const errData =
+        e?.response?.data || {
+          ok: false,
+          result: 'ERROR',
+          reason: 'Error al validar',
+          owner: null,
+        };
+      const normalized = normalizeScanPayload(errData);
+      setResult(normalized);
+      playFeedback(false);
+      return errData;
+    }
+  }, []);
+
+  /* ---------- startScanner (cámara) ---------- */
   const startScanner = useCallback(async () => {
     if (startingRef.current || startedRef.current) return;
     startingRef.current = true;
@@ -292,7 +290,6 @@ export default function GuardScan() {
       if (!scannerRef.current) scannerRef.current = new Html5Qrcode(regionId);
       else clearContainer();
 
-      // asegurar que no hay streams huérfanos
       hardStopCamera();
 
       const scanner = scannerRef.current;
@@ -302,7 +299,8 @@ export default function GuardScan() {
         { facingMode: 'environment' },
         config,
         async (text) => {
-          await handleCode(text);
+          await stopScanner();      // detener cámara al primer código
+          await handleValidate(text);
         },
         () => {}
       );
@@ -321,21 +319,21 @@ export default function GuardScan() {
     } finally {
       startingRef.current = false;
     }
-  }, [handleCode]);
+  }, [handleValidate, stopScanner]);
 
-  // Montaje / cambio de modo
+  /* ---------- Efecto: cambio de modo ---------- */
   useEffect(() => {
     if (mode === 'camera') {
       clearContainer();
       startScanner();
     } else {
-      // lector
       stopScanner();
       clearContainer();
     }
     return () => {};
   }, [mode, startScanner, stopScanner]);
 
+  /* ---------- cleanup global ---------- */
   useEffect(() => {
     return () => {
       stopScanner();
@@ -348,7 +346,6 @@ export default function GuardScan() {
     if (mode !== 'reader') return;
 
     const onKeyDown = (e) => {
-      // Evita capturar si hay un input activo
       const a = document.activeElement;
       const typing =
         a &&
@@ -359,28 +356,27 @@ export default function GuardScan() {
 
       const now = Date.now();
       const dt = now - (bufferRef.current.last || 0);
-      if (dt > 250) bufferRef.current.str = ''; // pausa larga → reinicia buffer
+      if (dt > 250) bufferRef.current.str = '';
       bufferRef.current.last = now;
 
       if (e.key === 'Enter' || e.key === 'NumpadEnter') {
         const code = bufferRef.current.str.trim();
         bufferRef.current.str = '';
         if (code.length >= 6) {
-          if (!readerReady) setReaderReady(true); // primer escaneo detecta lector
-          handleCode(code);
+          if (!readerReady) setReaderReady(true);
+          handleValidate(code);
         }
         return;
       }
 
-      // acumula caracteres imprimibles
       if (e.key.length === 1) bufferRef.current.str += e.key;
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mode, handleCode, readerReady]);
+  }, [mode, handleValidate, readerReady]);
 
-  /* ---------- Handlers de UI ---------- */
+  /* ---------- Handlers UI ---------- */
   const handleScanAgain = () => {
     setResult(null);
     setMsg('');
@@ -404,11 +400,10 @@ export default function GuardScan() {
   }
 
   return (
-    <div className="container mt-3" style={{ maxWidth: 560 }}>
+    <div className="container mt-3 scan-result-card" style={{ maxWidth: 560 }}>
       <div className="d-flex align-items-center justify-content-between">
         <h4>Escaneo (Guardia)</h4>
 
-        {/* Selector de modo */}
         <div className="btn-group">
           <button
             className={`btn btn-sm ${
@@ -431,7 +426,6 @@ export default function GuardScan() {
         </div>
       </div>
 
-      {/* Contenedor de cámara (solo visible en modo cámara) */}
       {mode === 'camera' && (
         <>
           <div
@@ -459,7 +453,6 @@ export default function GuardScan() {
         </>
       )}
 
-      {/* Indicador en modo lector */}
       {mode === 'reader' && (
         <div
           className={`alert ${
@@ -474,7 +467,7 @@ export default function GuardScan() {
       )}
 
       {!running && mode === 'camera' && (
-        <div className="mt-3 d-flex justify-content-end">
+        <div className="mt-3 d-flex justify-content>end">
           <button
             type="button"
             className="btn btn-outline-secondary"

@@ -15,29 +15,48 @@ app.use(
   cors({
     origin: (process.env.CORS_ORIGIN || 'http://localhost:3000')
       .split(',')
-      .map(s => s.trim()),
+      .map((s) => s.trim()),
     credentials: true,
   })
 );
 
-// ---------- Rutas ----------
+// ---------- Rutas API ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
 app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));
 app.use('/api/guest', require('./src/routers/guest'));
 app.use('/api/admin/import', require('./src/routers/adminImport'));
-app.use('/photos', express.static('public/photos'));
 
-// (opcional)
-app.get('/', (_req, res) => res.send('servidor funcionando correctamente'));
+// Servir fotos de usuarios (photoUrl tipo /photos/archivo.jpg)
+app.use(
+  '/photos',
+  express.static(path.join(__dirname, 'public', 'photos'))
+);
 
+// (opcional) raíz
+app.get('/', (_req, res) =>
+  res.send('servidor funcionando correctamente')
+);
+
+// ---------- SMTP + CRON JOBS ----------
 const { transporter } = require('./src/utils/mailer');
+const { setupDailyResetJobs } = require('./src/jobs/dailyReset');
 
-// verifica disponibilidad SMTP (no bloquea el arranque)
-transporter.verify()
+// Verifica disponibilidad SMTP (no bloquea el arranque)
+transporter
+  .verify()
   .then(() => console.log('✅ SMTP listo para enviar'))
-  .catch(err => console.error('❌ SMTP no disponible:', err?.message || err));
+  .catch((err) =>
+    console.error('❌ SMTP no disponible:', err?.message || err)
+  );
+
+// Inicia jobs diarios (reset INSIDE → OUTSIDE a las 23:00 CDMX)
+setupDailyResetJobs({
+  // pon true si quieres que ejecute un reset inmediato al arrancar
+  runOnStart: false,
+});
 
 // ---------- Arranque ----------
 const PORT = process.env.PORT || 4000;

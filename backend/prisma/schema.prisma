@@ -62,6 +62,7 @@ model User {
   role              String // ADMIN | GUARD | USER
   institutionalType InstitutionalType? //Solo aplica cuando role = USER
   photoUrl          String?   @db.VarChar(255)  // URL de la foto
+  lastActivityAt     DateTime?           @default(now()) // Cierrre de sesión por inactividad
   mustChangePassword Boolean             @default(false) // Verifica que el usuario debe cambiar la contraseña
   createdAt         DateTime           @default(now())
   isActive          Boolean            @default(true)

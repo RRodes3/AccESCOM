@@ -17,3 +17,71 @@ code {
   text-decoration: underline !important;
   font-weight: 500;
 }
+
+/* ====== Ajustes generales de tablas en móvil ====== */
+@media (max-width: 576px) {
+  .table {
+    font-size: 0.8rem;
+  }
+
+  .table thead {
+    white-space: nowrap;
+  }
+
+  .table td,
+  .table th {
+    padding: 0.35rem 0.45rem;
+    vertical-align: middle;
+  }
+
+  .container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .btn-group,
+  .row .col-auto {
+    margin-bottom: 0.3rem;
+  }
+
+  .card {
+    margin-bottom: 0.75rem;
+  }
+
+  .navbar .navbar-text {
+    font-size: 0.9rem;
+  }
+}
+
+/* ====== Ajustes específicos para el lector de QR ====== */
+@media (max-width: 576px) {
+  #reader {
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 260px;
+  }
+
+  #reader video {
+    max-width: 100%;
+    height: auto;
+    object-fit: cover;
+  }
+
+  .btn.btn-lg,
+  .btn.btn-primary.btn-lg {
+    font-size: 1rem;
+    padding: 0.6rem 1.1rem;
+  }
+}
+
+/* ====== Tarjetas de resultado de escaneo ====== */
+@media (max-width: 576px) {
+  .scan-result-card {
+    max-width: 100% !important;
+    margin: 0.5rem auto;
+  }
+
+  .scan-result-card .rounded-3 {
+    border-radius: 0.6rem !important;
+  }
+}

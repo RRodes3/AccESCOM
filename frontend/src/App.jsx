@@ -3,6 +3,7 @@ import React from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 
 import Navbar from './components/Navbar.jsx';
+import SessionIdleWatcher from './components/SessionIdleWatcher.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './components/Login.jsx';
 
@@ -33,6 +34,9 @@ function AppLayout() {
   return (
     <>
       {showNavbar && <Navbar />}
+      {/* Escucha inactividad global sin mostrar UI */}
+      <SessionIdleWatcher />
+
       <div className="container mt-4">
         <Routes>
           {/* Públicas */}
@@ -44,7 +48,6 @@ function AppLayout() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/guest/dashboard" element={<GuestDashboard />} />
           <Route path="/register/confirm" element={<ConfirmRegister />} />
-           {/*--  <Route path="/guest/confirm" element={<ConfirmGuest />} />  --*/}
           <Route path="/confirm-guest" element={<ConfirmGuest />} />
           
 
@@ -94,7 +97,6 @@ function AppLayout() {
             }
           />
 
-          {/* Ruta para cambio de contraseña (usuario autenticado) */}
           <Route
             path="/change-password"
             element={
@@ -119,6 +121,5 @@ function AppLayout() {
 }
 
 export default function App() {
-  // ❌ Nada de <BrowserRouter> aquí
   return <AppLayout />;
 }

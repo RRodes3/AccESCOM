@@ -1,18 +1,77 @@
 // backend/src/middleware/auth.js
 const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
-module.exports = function auth(req, res, next) {
-  const header = req.header('Authorization');
-  const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  const token = req.cookies?.token || bearer;
+const IDLE_MINUTES = Number(process.env.SESSION_IDLE_MINUTES || '15');
 
-  if (!token) return res.status(401).json({ error: 'No autorizado' });
-
+module.exports = async function auth(req, res, next) {
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET); // {id, role, email, name}
-    req.user = payload;
-    next();
+    const token = req.cookies?.token;
+    if (!token) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Token inválido o expirado' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.id },
+    });
+
+    if (!user || !user.isActive) {
+      res.clearCookie('token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
+      return res.status(401).json({ error: 'Usuario inactivo o no encontrado' });
+    }
+
+    // ⏱️ Check de inactividad
+    const now = new Date();
+    if (user.lastActivityAt) {
+      const diffMs = now - user.lastActivityAt;
+      const diffMin = diffMs / 60000;
+      if (diffMin > IDLE_MINUTES) {
+        // Limpia cookie y marca sesión expirada
+        res.clearCookie('token', {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        });
+        return res.status(401).json({ error: 'Sesión expirada por inactividad' });
+      }
+    }
+
+    // Actualizar lastActivityAt (no bloqueamos la petición si falla)
+    prisma.user
+      .update({
+        where: { id: user.id },
+        data: { lastActivityAt: now },
+      })
+      .catch((e) => console.error('Error actualizando lastActivityAt:', e));
+
+    // Colgar info mínima en req.user para el resto de rutas
+    req.user = {
+      id: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+      boleta: user.boleta,
+      accessState: user.accessState,
+      mustChangePassword: user.mustChangePassword,
+      institutionalType: user.institutionalType,
+      photoUrl: user.photoUrl,
+    };
+
+    return next();
   } catch (e) {
-    return res.status(401).json({ error: 'Token inválido' });
+    console.error('AUTH MIDDLEWARE ERROR:', e);
+    return res.status(401).json({ error: 'No autenticado' });
   }
 };

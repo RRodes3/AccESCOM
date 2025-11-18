@@ -5,11 +5,15 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');        // ajusta ruta si difiere
 const { cookieOptions } = require('../utils/cookies');
+const axios = require('axios');
+
 const RE_LETTERS   = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;         // letras y espacios
 const RE_BOLETA    = /^\d{10}$/;                             // exactamente 10 dígitos
 const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/; //contraseña fuerte
-const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i; // email tipo "iniciales.apellido" o "rrodasr1800" + @ipn.mx/@alumno.ipn.mx
+const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i; // email tipo "iniciales.apellido"
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
+
+const SECRET = process.env.JWT_SECRET || 'dev-secret';
 
 const isInstitutional = (email) =>
   RE_EMAIL_DOT.test((email||'').trim()) || RE_EMAIL_COMPACT.test((email||'').trim());
@@ -21,7 +25,6 @@ const buildFullName = (firstName, lastNameP, lastNameM) => {
   const parts = [firstName, lastNameP, lastNameM].map(sanitizeName).filter(Boolean);
   return (parts.join(' ') || 'Usuario').slice(0, 120);
 };
-
 
 const prisma = new PrismaClient();
 
@@ -76,7 +79,6 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
 
     // 5.1) Determinar sub-rol institucional si no fue enviado (solo para USER)
-    //     No sobreescribe institutionalType proveniente del body.
     let resolvedInstitutionalType = institutionalType || null;
     if (!resolvedInstitutionalType) {
       if (/@alumno\.ipn\.mx$/i.test(email)) {
@@ -97,7 +99,7 @@ router.post('/register', async (req, res) => {
         email,
         password: hash,
         role: 'USER',
-        institutionalType: resolvedInstitutionalType, // ← usa el valor resuelto (body o inferido)
+        institutionalType: resolvedInstitutionalType,
       },
       select: {
         id: true, name: true, email: true, role: true, boleta: true,
@@ -113,104 +115,101 @@ router.post('/register', async (req, res) => {
 });
 
 
-// ====== LOGIN con Super Admin ======
+// ====== LOGIN con Super Admin + reCAPTCHA v3 ======
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'Faltan credenciales' });
+    const { email, password, captcha } = req.body;
 
-    const superEmail = (process.env.SUPER_ADMIN_EMAIL || '').toLowerCase();
-    const superPass  = String(process.env.SUPER_ADMIN_PASSWORD || '');
-
-    if (superEmail && email.toLowerCase() === superEmail) {
-      // compara contra el .env
-      if (password !== superPass) return res.status(401).json({ error: 'Credenciales inválidas' });
-
-      // upsert del super admin en BD para tener id/relaciones
-      const superUser = await prisma.user.upsert({
-        where: { email: superEmail },
-        update: { role: 'ADMIN' },
-        create: {
-          boleta: '0000000000',
-          firstName: 'Super',
-          lastNameP: 'Admin',
-          lastNameM: 'IPN',
-          name: 'Super Admin',
-          email: superEmail,
-          password: await bcrypt.hash(superPass, 10),
-          role: 'ADMIN'
-        },
-        select: { 
-          id: true, 
-          name: true, 
-          email: true, 
-          role: true, 
-          boleta: true,
-          institutionalType: true,
-          mustChangePassword: true
-        }
-      });
-
-      const payload = { 
-        id: superUser.id, 
-        role: superUser.role, 
-        email: superUser.email, 
-        name: superUser.name,
-        boleta: superUser.boleta,
-        institutionalType: superUser.institutionalType,
-        mustChangePassword: superUser.mustChangePassword || false // super admin no necesita cambiar
-      };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
-      const body = { ok: true, user: payload };
-      if (process.env.NODE_ENV !== 'production') body.token = token;
-      return res.cookie('token', token, cookieOptions).json(body);
+    // 1) Validar que venga el token de captcha
+    if (!captcha) {
+      return res.status(400).json({ error: 'Falta validar el captcha' });
     }
 
-    // flujo normal (no super admin)
+    // 2) Verificar con Google reCAPTCHA v3
+    try {
+      const googleResp = await axios.post(
+        'https://www.google.com/recaptcha/api/siteverify',
+        null,
+        {
+          params: {
+            secret: process.env.RECAPTCHA_SECRET,
+            response: captcha,
+          },
+        }
+      );
+
+      const g = googleResp.data;
+      const score = typeof g.score === 'number' ? g.score : 0;
+
+      if (!g.success || score < 0.5) {
+        return res.status(400).json({ error: 'Captcha inválido' });
+      }
+    } catch (err) {
+      console.error('Error verificando reCAPTCHA:', err?.message || err);
+      return res.status(500).json({ error: 'Error al validar captcha' });
+    }
+
+    // 3) Login normal: buscar usuario
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email },
       select: {
         id: true,
-        name: true,
         email: true,
         role: true,
+        name: true,
+        firstName: true,
+        lastNameP: true,
+        lastNameM: true,
         boleta: true,
-        institutionalType: true,
+        password: true,               // 👈 campo real en el modelo
         mustChangePassword: true,
-        password: true  // necesario para comparar
-      }
+        institutionalType: true,
+        photoUrl: true,
+      },
     });
-    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales incorrectas' });
+    }
+
+    // 4) Validar contraseña usando user.password
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!ok) {
+      return res.status(401).json({ error: 'Credenciales incorrectas' });
+    }
 
-    // JWT payload sin password
-    const userPayload = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      boleta: user.boleta,
-      institutionalType: user.institutionalType,
-      mustChangePassword: user.mustChangePassword
-    };
+    // 5) Actualizar lastActivityAt
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastActivityAt: new Date() },
+    });
 
-    const token = jwt.sign(userPayload, process.env.JWT_SECRET, { expiresIn: '1d' });
-    const body = { ok: true, user: userPayload };
-    if (process.env.NODE_ENV !== 'production') body.token = token;
+    // 6) Crear JWT y setear cookie
+    const token = jwt.sign({ id: user.id, role: user.role }, SECRET, {
+      expiresIn: '7d',
+    });
 
-    return res.cookie('token', token, cookieOptions).json(body);
+    res.cookie('token', token, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+    });
+
+    // 7) Respuesta sanitizada (no mandamos la contraseña)
+    const { password: _pw, ...sanitized } = user;
+
+    return res.json({ user: sanitized });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error en login' });
+    console.error('Login error:', e);
+    return res.status(500).json({ error: 'Error en el login' });
   }
 });
 
 
 /* ---------- LOGOUT ---------- */
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', { ...cookieOptions, maxAge: 0 }).json({ ok: true });
+  res
+    .clearCookie('token', { ...cookieOptions, maxAge: 0 })
+    .json({ ok: true });
 });
 
 /* ---------- ME ---------- */
@@ -219,7 +218,6 @@ router.get('/me', auth, (req, res) => {
 });
 
 /* ---------- Contraseña olvidada (RESET) ---------- */
-//Crea un transport de correo
 const { transporter, sendPasswordResetEmail } = require('../utils/mailer');
 
 // POST /api/auth/forgot-password (pide el reset)
@@ -229,26 +227,21 @@ router.post('/forgot-password', async (req, res) => {
     const ua = req.headers['user-agent'] || '';
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
 
-    //Busca al usuario (solo USER institucional puede resetear aquí; admin/guard por admin)
     const user = await prisma.user.findUnique({ where: { email } });
 
-    //siempre responde 200 (ok) (para no filtrar enumeración de correos)
-    //Pero si existe y es USER activo, generamos y enviamos
     if (user?.role === 'USER' && user?.isActive) {
-      //Invalida tokens anteriores sin usar (por higiene)
       await prisma.passwordReset.updateMany({
         where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
-        data: { expiresAt: new Date() } // forzamos expiración inmediata
+        data: { expiresAt: new Date() }
       });
 
       const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 min desde ahora
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
       await prisma.passwordReset.create({
         data: { userId: user.id, token, expiresAt, ip, userAgent: ua }
       });
 
-      //URL del front http://localhost:3000
       const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
       const resetUrl = `${baseUrl}/reset-password?token=${token}`;
       console.log('🔗 resetUrl generado:', resetUrl);
@@ -258,7 +251,6 @@ router.post('/forgot-password', async (req, res) => {
         await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
       } catch (mailErr) {
         console.error('EMAIL SEND ERROR:', mailErr?.response || mailErr);
-        // decidir si borrar token o no; aquí lo dejamos
       }
     }
 
@@ -269,7 +261,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-// POST /api/auth/reset-password  (aplica el reset con token)
+// POST /api/auth/reset-password
 router.post('/reset-password', async (req, res) => {
   try {
     const token = String(req.body?.token || '').trim();
@@ -279,26 +271,23 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Token inválido o contraseña no cumple política.' });
     }
 
-    // Busca token válido
     const pr = await prisma.passwordReset.findUnique({ where: { token } });
     if (!pr || pr.usedAt || pr.expiresAt <= new Date()) {
       return res.status(400).json({ ok: false, error: 'Enlace inválido o expirado.' });
     }
 
-    // Usuario debe existir y ser USER activo
     const user = await prisma.user.findUnique({ where: { id: pr.userId } });
     if (!user || user.role !== 'USER' || !user.isActive) {
       return res.status(400).json({ ok: false, error: 'No es posible restablecer para esta cuenta.' });
     }
 
-    // Cambia contraseña + marca token usado (transacción)
     const hash = await bcrypt.hash(newPassword, 10);
     await prisma.$transaction([
       prisma.user.update({ where: { id: user.id }, data: { password: hash } }),
       prisma.passwordReset.update({ where: { id: pr.id }, data: { usedAt: new Date() } }),
       prisma.passwordReset.updateMany({
         where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() }, NOT: { id: pr.id } },
-        data:  { expiresAt: new Date() } // invalidar otros tokens activos
+        data:  { expiresAt: new Date() }
       })
     ]);
 
@@ -310,7 +299,6 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // POST /api/auth/change-password
-// Body: { currentPassword, newPassword }
 router.post('/change-password', auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
@@ -354,7 +342,7 @@ router.post('/change-password', auth, async (req, res) => {
       where: { id: user.id },
       data: {
         password: hash,
-        mustChangePassword: false, // 👈 importante: ya no mostrar contraseña por defecto
+        mustChangePassword: false,
       }
     });
 

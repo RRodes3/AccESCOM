@@ -23,7 +23,23 @@ export const api = axios.create({
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    // Puedes unificar mensajes aquí si quieres
+    const status = err?.response?.status;
+    const msg = err?.response?.data?.error || '';
+
+    if (status === 401) {
+      // Si fue por inactividad, mostramos mensaje más claro
+      if (msg.toLowerCase().includes('inactividad')) {
+        alert('Tu sesión ha expirado por inactividad. Vuelve a iniciar sesión.');
+      }
+      // Limpia usuario y manda al login
+      try {
+        localStorage.removeItem('user');
+      } catch {}
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+
     return Promise.reject(err);
   }
 );
