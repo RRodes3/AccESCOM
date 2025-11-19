@@ -67,11 +67,14 @@ model User {
   createdAt         DateTime           @default(now())
   isActive          Boolean            @default(true)
   accessState       AccessState        @default(OUTSIDE)
-
+  enabled   Boolean @default(true)
   qrPasses      QRPass[]
   accessLogs    AccessLog[]     @relation("AccessByUser")
   guardLogs     AccessLog[]     @relation("ValidatedByGuard")
   PasswordReset PasswordReset[]
+  failedAttempts      Int       @default(0) // Contador de intentos fallidos
+  lastFailedAttempt   DateTime  @default(now()) // Fecha del último intento fallido
+  qrAttempts QRAttempt[] // Relación inversa a QRAttempt
 
   @@index([role])
   @@index([institutionalType])
@@ -144,4 +147,14 @@ model PasswordReset {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model QRAttempt {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  attemptedAt  DateTime  @default(now())
+  status       String    // Puede ser 'FAILED', 'SUCCESS', 'EXPIRED', etc.
+  reason       String    // Razón del fallo, ej: 'QR Expirado', 'Intento Repetido'
+
+  user         User      @relation(fields: [userId], references: [id])
 }

@@ -4,17 +4,30 @@ const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
+const { sendAccessNotificationEmail } = require('../utils/mailer');
 
 const prisma = new PrismaClient();
 
-const KINDS = new Set(['ENTRY', 'EXIT']);
-const isValidKind = (k) => typeof k === 'string' && KINDS.has(k);
-
-// Duración por defecto (no es tan importante, porque usamos el tope del domingo)
-const TTL_MINUTES = Math.max(
-  1,
-  parseInt(process.env.QR_TTL_MINUTES || '5', 10) // 5 min en pruebas, 10080 en prod
-);
+// Helper para registrar intentos de validación por usuario institucional
+function recordAttempt(pass, status, reason) {
+  try {
+    if (!pass?.userId) return;
+    const delegate = prisma.qRAttempt;
+    if (!delegate || typeof delegate.create !== 'function') {
+      console.warn('[QRAttempt] Delegate missing; skipping attempt log');
+      return;
+    }
+    return delegate.create({
+      data: {
+        userId: pass.userId,
+        status: String(status),
+        reason: (reason ?? '').toString().slice(0, 160),
+      },
+    }).catch(e => console.error('QRAttempt create error:', e));
+  } catch (e) {
+    console.error('recordAttempt skipped:', e);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────
 // Helpers de tiempo
@@ -115,6 +128,18 @@ function buildOwner(pass) {
   }
 
   return null;
+}
+
+// Helper para validar el tipo de QR
+function isValidKind(kind) {
+  if (typeof kind !== 'string') return false;
+  const k = kind.trim().toUpperCase();
+  const extra = (process.env.QR_EXTRA_KINDS || '')
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean);
+  const validKinds = new Set(['ENTRY', 'EXIT', ...extra]);
+  return validKinds.has(k);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -377,15 +402,25 @@ router.post(
           reason = 'QR revocado. Genera uno nuevo.';
         }
 
-        await createAccessLog({
-          kind: pass.kind,
-          action: 'VALIDATE_DENY',
-          userId: pass.userId || null,
-          guestId: pass.guestId || null,
-          qrId: pass.id,
-          guardId: req.user.id,
-        });
-
+        // Registrar intento fallido
+        recordAttempt(pass,
+          pass.status === 'EXPIRED' ? 'EXPIRED'
+          : pass.status === 'USED' ? 'USED'
+          : pass.status === 'REVOKED' ? 'REVOKED'
+          : 'FAILED_STATUS',
+          reason
+        );
+        // Opcional: correo en fallos de estado
+        if (pass.user && pass.user.role === 'USER' && pass.user.institutionalType && pass.user.email) {
+          sendAccessNotificationEmail({
+            to: pass.user.email,
+            name: pass.user.name || [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM].filter(Boolean).join(' '),
+            type: accessType,
+            date: new Date(),
+            locationName: 'ESCOM',
+            reason
+          }).catch(err => console.error('Email (status deny):', err));
+        }
         return res.status(400).json({
           ok: false,
           result,
@@ -403,15 +438,18 @@ router.post(
           data: { status: 'EXPIRED' },
         });
 
-        await createAccessLog({
-          kind: pass.kind,
-          action: 'VALIDATE_DENY',
-          userId: pass.userId || null,
-          guestId: pass.guestId || null,
-          qrId: pass.id,
-          guardId: req.user.id,
-        });
-
+        // Intento expirado
+        recordAttempt(pass, 'EXPIRED', reason);
+        if (pass.user && pass.user.role === 'USER' && pass.user.institutionalType && pass.user.email) {
+          sendAccessNotificationEmail({
+            to: pass.user.email,
+            name: pass.user.name || [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM].filter(Boolean).join(' '),
+            type: accessType,
+            date: new Date(),
+            locationName: 'ESCOM',
+            reason
+          }).catch(err => console.error('Email (expired deny):', err));
+        }
         return res.status(400).json({
           ok: false,
           result: 'EXPIRED_QR',
@@ -434,6 +472,17 @@ router.post(
             qrId: pass.id,
             guardId: req.user.id,
           });
+          recordAttempt(pass, 'STATE_DENY', reason);
+          if (u.role === 'USER' && u.institutionalType && u.email) {
+            sendAccessNotificationEmail({
+              to: u.email,
+              name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
+              type: accessType,
+              date: new Date(),
+              locationName: 'ESCOM',
+              reason
+            }).catch(err => console.error('Email (already inside):', err));
+          }
           return res.status(400).json({
             ok: false,
             result: 'DENIED',
@@ -452,6 +501,17 @@ router.post(
             qrId: pass.id,
             guardId: req.user.id,
           });
+          recordAttempt(pass, 'STATE_DENY', reason);
+          if (u.role === 'USER' && u.institutionalType && u.email) {
+            sendAccessNotificationEmail({
+              to: u.email,
+              name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
+              type: accessType,
+              date: new Date(),
+              locationName: 'ESCOM',
+              reason
+            }).catch(err => console.error('Email (not entered yet):', err));
+          }
           return res.status(400).json({
             ok: false,
             result: 'DENIED',
@@ -479,6 +539,26 @@ router.post(
           ...pass,
           user: { ...u, accessState: newState },
         });
+
+        // 📧 Enviar correo solo a usuarios institucionales con correo y tipo institucional definido
+        const isInstitutionalUser =
+          u.role === 'USER' && !!u.institutionalType && !!u.email;
+
+        if (isInstitutionalUser) {
+          try {
+            await sendAccessNotificationEmail({
+              to: u.email,
+              name: ownerAllowed?.name || u.name,
+              type: accessType,
+              date: new Date(),
+              locationName: 'ESCOM',
+            }).catch(err => console.error('Email acceso async:', err));
+          } catch (mailErr) {
+            console.error('Error enviando correo de acceso (validate):', mailErr);
+          }
+        }
+        // Registrar éxito
+        recordAttempt(pass, 'SUCCESS', pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido');
 
         return res.json({
           ok: true,
@@ -854,6 +934,31 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       },
     });
 
+    // 📧 Enviar correo si es usuario institucional y el QR fue permitido
+    if (
+      result === 'ALLOWED' &&
+      pass?.user &&
+      pass.user.role === 'USER' &&
+      pass.user.institutionalType &&
+      pass.user.email
+    ) {
+      try {
+        await sendAccessNotificationEmail({
+          to: pass.user.email,
+          name: pass.user.name || [
+            pass.user.firstName,
+            pass.user.lastNameP,
+            pass.user.lastNameM,
+          ].filter(Boolean).join(' '),
+          type: accessType,      // 'ENTRY' o 'EXIT'
+          date: new Date(),
+          locationName: 'ESCOM',
+        }).catch(err => console.error('Email acceso async:', err));
+      } catch (mailErr) {
+        console.error('Error enviando correo de acceso (scan):', mailErr);
+      }
+    }
+
     let owner = null;
     if (pass?.user) {
       owner = {
@@ -874,9 +979,7 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
           pass.guest.firstName,
           pass.guest.lastNameP,
           pass.guest.lastNameM,
-        ]
-          .filter(Boolean)
-          .join(' '),
+        ].filter(Boolean).join(' '),
         firstName: pass.guest.firstName,
         lastNameP: pass.guest.lastNameP,
         lastNameM: pass.guest.lastNameM,
@@ -898,6 +1001,72 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
     return res
       .status(500)
       .json({ ok: false, error: 'No se pudo validar el QR' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// E) GET /api/qr/last-accesses?take=10&skip=0 (GUARD/ADMIN)
+// ─────────────────────────────────────────────────────────────
+router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
+  try {
+    const take = Math.min(parseInt(req.query.take || '10', 10), 50); // máx 50 por página
+    const skip = Math.max(0, parseInt(req.query.skip || '0', 10));
+
+    const [accesses, total] = await Promise.all([
+      prisma.accessLog.findMany({
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              name: true,
+              firstName: true,
+              lastNameP: true,
+              lastNameM: true,
+              boleta: true,
+              photoUrl: true,
+            }
+          },
+          guest: {
+            select: {
+              firstName: true,
+              lastNameP: true,
+              lastNameM: true,
+            }
+          },
+          qr: {
+            select: { kind: true, status: true }
+          },
+        },
+      }),
+      prisma.accessLog.count(), // total de registros
+    ]);
+
+    // Normalizar nombre de invitado
+    const normalized = accesses.map(a => ({
+      ...a,
+      guest: a.guest ? {
+        ...a.guest,
+        name: [a.guest.firstName, a.guest.lastNameP, a.guest.lastNameM]
+          .filter(Boolean)
+          .join(' ')
+      } : null
+    }));
+
+    res.json({
+      accesses: normalized,
+      pagination: {
+        total,
+        take,
+        skip,
+        totalPages: Math.ceil(total / take),
+        currentPage: Math.floor(skip / take) + 1,
+      }
+    });
+  } catch (e) {
+    console.error('Error fetching last accesses:', e);
+    res.status(500).json({ error: 'No se pudieron obtener los accesos' });
   }
 });
 

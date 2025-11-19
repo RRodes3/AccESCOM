@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import LastAccessesTable from '../components/LastAccessesTable';
 
 /* ---------- beep corto OK/FAIL ---------- */
 function playFeedback(ok) {
@@ -479,6 +480,8 @@ export default function GuardScan() {
       )}
 
       {msg && <div className="alert alert-warning mt-3">{msg}</div>}
+
+      <LastAccessesTable />
     </div>
   );
 }

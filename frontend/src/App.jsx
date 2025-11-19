@@ -24,6 +24,7 @@ import GuestDashboard from './pages/dashboards/GuestDashboard.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ChangePassword from './pages/ChangePassword';
+import LastAccesses from './pages/LastAccesses.jsx';
 
 
 function AppLayout() {
@@ -93,6 +94,15 @@ function AppLayout() {
             element={
               <ProtectedRoute roles={['ADMIN']}>
                 <AccessReport />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/last-accesses"
+            element={
+              <ProtectedRoute roles={['ADMIN', 'GUARD']}>
+                <LastAccesses />
               </ProtectedRoute>
             }
           />

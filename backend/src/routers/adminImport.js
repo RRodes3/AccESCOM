@@ -3,14 +3,16 @@ const router = require('express').Router();
 const { PrismaClient, InstitutionalType } = require('@prisma/client');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const path = require('path');
+const fs = require('fs');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
 const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-// ───── Multer: memoria, 5MB, solo CSV/XLSX ────────────────────────────────────
-const upload = multer({
+// ───── Multer: memoria y disco, 50MB, CSV/XLSX/ZIP ────────────────────────────
+const uploadMemory = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -21,6 +23,21 @@ const upload = multer({
       /\.csv$/i.test(file.originalname) ||
       /\.xlsx?$/i.test(file.originalname);
     if (!ok) return cb(new Error('Formato no soportado (usa CSV/XLSX)'));
+    cb(null, true);
+  },
+});
+
+const uploadDisk = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB para ZIPs con fotos
+  fileFilter: (_req, file, cb) => {
+    const ok =
+      file.mimetype === 'text/csv' ||
+      file.mimetype === 'application/zip' ||
+      file.mimetype === 'application/x-zip-compressed' ||
+      /\.csv$/i.test(file.originalname) ||
+      /\.zip$/i.test(file.originalname);
+    if (!ok) return cb(new Error('Formato no soportado (usa CSV o ZIP)'));
     cb(null, true);
   },
 });
@@ -121,14 +138,15 @@ function mapInstitutionalTypeForPrisma(raw) {
   return null;
 }
 
-// ───── IMPORTAR USUARIOS: POST /api/admin/import/users ────────────────────────
+// ───── IMPORTAR USUARIOS (XLSX/CSV en memoria): POST /api/admin/import/users ──
 router.post(
   '/users',
   auth,
   requireRole(['ADMIN']),
-  upload.single('file'),
+  uploadMemory.single('file'),
   async (req, res) => {
     const dryRun = String(req.query.dryRun || '').toLowerCase() === 'true';
+    const conflictAction = String(req.query.conflictAction || 'exclude').toLowerCase(); // 'exclude' | 'overwrite' | 'delete'
 
     if (!req.file) {
       return res.status(400).json({ error: 'Falta archivo' });
@@ -142,6 +160,12 @@ router.post(
 
       const errors = [];
       const validRows = [];
+      const conflictsHandled = {
+        excluded: 0,
+        deleted: 0,
+        overwritten: 0,
+        users: [], // ← MOVIDO AQUÍ: guardamos conflictos inmediatamente
+      };
 
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
@@ -198,15 +222,57 @@ router.post(
           where: {
             OR: [{ boleta }, { email }],
           },
+          select: {
+            id: true, // ← AGREGADO: necesario para poder eliminarlo
+            email: true,
+            boleta: true,
+            firstName: true,
+            lastNameP: true,
+            lastNameM: true,
+          }
         });
 
         if (existing) {
-          const dupErr = {};
-          if (existing.boleta === boleta) dupErr.boleta = 'Esta boleta ya está registrada';
-          if (existing.email === email) dupErr.email = 'Este correo ya está registrado';
+          // Determinar tipo de conflicto
+          let conflictType = '';
+          if (existing.boleta === boleta && existing.email === email) {
+            conflictType = 'Duplicado por boleta y correo';
+          } else if (existing.boleta === boleta) {
+            conflictType = 'Duplicado por boleta';
+          } else if (existing.email === email) {
+            conflictType = 'Duplicado por correo';
+          }
 
-          errors.push({ line, errors: dupErr, row: r });
-          continue;
+          // ✅ GUARDAR EL CONFLICTO INMEDIATAMENTE (antes de continue/delete)
+          conflictsHandled.users.push({
+            email: email,
+            boleta: boleta,
+            name: buildFullName(firstName, lastNameP, lastNameM),
+            existingName: buildFullName(existing.firstName, existing.lastNameP, existing.lastNameM),
+            conflictType: conflictType,
+          });
+
+          if (conflictAction === 'exclude') {
+            // Excluir el usuario, no hacer nada
+            conflictsHandled.excluded++;
+            console.log(`⏭️  Usuario ${email} ya existe, excluyendo...`);
+            continue; // ← Ahora está bien porque YA guardamos el conflicto arriba
+          }
+
+          if (conflictAction === 'delete') {
+            // Eliminar el usuario existente antes de crear el nuevo
+            await prisma.user.delete({
+              where: { id: existing.id },
+            });
+            conflictsHandled.deleted++;
+            console.log(`🗑️  Usuario ${email} eliminado para reemplazar`);
+          }
+
+          if (conflictAction === 'overwrite') {
+            // Se sobrescribirá con upsert más adelante
+            conflictsHandled.overwritten++;
+            console.log(`✏️  Usuario ${email} será sobrescrito`);
+          }
         }
 
         validRows.push({
@@ -241,13 +307,14 @@ router.post(
         };
       });
 
-      if (errors.length) {
+      if (errors.length && toCreate.length === 0) {
         return res.status(400).json({
-          error: 'Validación fallida',
+          error: 'Validación fallida - no hay registros válidos',
           summary: {
             total: rows.length,
             valid: toCreate.length,
             invalid: errors.length,
+            conflicts: conflictsHandled, // ← Ya tiene users[] poblado
           },
           errors,
         });
@@ -255,11 +322,12 @@ router.post(
 
       if (dryRun) {
         return res.json({
-          ok: errors.length === 0,
+          ok: true,
           summary: {
             total: rows.length,
             valid: toCreate.length,
             errors: errors.length,
+            conflicts: conflictsHandled, // ← Ya tiene users[] poblado
             samplePasswords: toCreate.slice(0, 3).map((u) => ({
               email: u.email,
               boleta: u.boleta,
@@ -323,6 +391,8 @@ router.post(
       return res.json({
         total: rows.length,
         upserted: results.length,
+        conflicts: conflictsHandled,
+        errors: errors.length > 0 ? errors : undefined,
       });
     } catch (e) {
       console.error('IMPORT USERS ERROR:', e);
@@ -336,5 +406,69 @@ router.post(
   }
 );
 
+// ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import ────────
+router.post(
+  '/import',
+  auth,
+  requireRole(['ADMIN']),
+  uploadDisk.single('file'),
+  async (req, res) => {
+    const { file } = req;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No se ha enviado ningún archivo.' });
+    }
+
+    try {
+      let response;
+
+      // Si el archivo es ZIP (contiene CSV y fotos)
+      if (
+        file.mimetype === 'application/zip' ||
+        file.mimetype === 'application/x-zip-compressed'
+      ) {
+        // Cargar dinámicamente el script de importación con fotos
+        const { importUsersWithPhotos } = require('../scripts/importWithPhotos');
+        
+        // Procesar ZIP: extraer CSV y fotos, luego importar
+        response = await importUsersWithPhotos(file.path);
+      }
+      // Si el archivo es un CSV simple
+      else if (file.mimetype === 'text/csv') {
+        // Cargar dinámicamente el script de importación CSV
+        const { importCSV } = require('../scripts/importCSV');
+        
+        // Procesar CSV sin fotos
+        response = await importCSV(file.path);
+      } else {
+        // Limpiar archivo temporal
+        fs.unlinkSync(file.path);
+        return res.status(400).json({ error: 'Tipo de archivo no válido. Use CSV o ZIP.' });
+      }
+
+      // Limpiar archivo temporal después de procesarlo
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+
+      res.json({
+        message: 'Datos importados exitosamente',
+        data: response,
+      });
+    } catch (error) {
+      console.error('ERROR EN /import:', error);
+      
+      // Limpiar archivo temporal en caso de error
+      if (file?.path && fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+
+      res.status(500).json({
+        error: 'Hubo un error al procesar el archivo',
+        details: error.message,
+      });
+    }
+  }
+);
 
 module.exports = router;

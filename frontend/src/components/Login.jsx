@@ -13,8 +13,8 @@ export default function Login() {
   const expired = params.get('expired') === '1';
   
   const [flash, setFlash] = useState(location.state?.flash || '');
-  const [email, setEmail] = useState('admin@demo.com');
-  const [password, setPassword] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [captchaError, setCaptchaError] = useState('');
@@ -79,6 +79,10 @@ export default function Login() {
     } catch (err) {
       if (err?.message?.includes('reCAPTCHA')) {
         setCaptchaError(err.message);
+      } else if (err?.response?.status === 403) {
+        setMsg('Tu cuenta ha sido deshabilitada. Contacta al administrador.');
+      } else if (err?.response?.status === 401) {
+        setMsg(err?.response?.data?.error || 'Correo o contraseña incorrectos.');
       } else {
         setMsg(err?.response?.data?.error || 'Error al iniciar sesión');
       }

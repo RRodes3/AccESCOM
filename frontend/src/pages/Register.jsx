@@ -69,7 +69,7 @@ export default function Register() {
         <input
           name="boleta"
           className={`form-control ${errors.boleta ? 'is-invalid' : ''} mb-2`}
-          placeholder="Ej. 2022630465"
+          placeholder="Ej. 202XXXXXXX"
           value={form.boleta} onChange={onChange} inputMode="numeric" maxLength={10}
         />
         {errors.boleta && <div className="invalid-feedback d-block">{errors.boleta}</div>}
@@ -107,7 +107,7 @@ export default function Register() {
         <input
           name="email" type="email"
           className={`form-control ${errors.email ? 'is-invalid' : ''} mb-2 bg-white`}
-          placeholder="ej. rrodasr1800@alumno.ipn.mx"
+          placeholder="Ej. usuario@alumno.ipn.mx"
           value={form.email} onChange={onChange}
         />
         {errors.email && <div className="invalid-feedback d-block">{errors.email}</div>}

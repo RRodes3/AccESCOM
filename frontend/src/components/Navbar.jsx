@@ -102,6 +102,7 @@ export default function Navbar() {
     '/confirm-register': 'Confirmar datos',
     '/guest/dashboard': 'Invitado',
     '/guard-scan': 'Escaneo',
+    '/last-accesses': 'Tabla de registros',
   };
 
   const isConfirmScreen = ['/confirm-guest', '/confirm-register'].includes(location.pathname);
@@ -117,6 +118,12 @@ export default function Navbar() {
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/admin/users', label: 'Usuarios' },
     { path: '/access-report', label: 'Reportes' },
+    { path: '/last-accesses', label: 'Registros' },
+  ];
+
+  const guardLinks = [
+    { path: '/guard-scan', label: 'Escanear' },
+    { path: '/last-accesses', label: 'Registros' },
   ];
 
   const mustChangePassword = !!user?.mustChangePassword;
@@ -238,6 +245,23 @@ export default function Navbar() {
                         Importar BD
                       </Link>
                     </li>
+                  </>
+                )}
+
+                {/* GUARD */}
+                {isGuard && (
+                  <>
+                    {guardLinks.map((lnk) => (
+                      <li key={lnk.path} className="nav-item">
+                        <Link
+                          to={lnk.path}
+                          className="btn btn-sm btn-outline-light"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          {lnk.label}
+                        </Link>
+                      </li>
+                    ))}
                   </>
                 )}
 

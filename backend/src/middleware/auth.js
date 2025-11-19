@@ -7,7 +7,9 @@ const IDLE_MINUTES = Number(process.env.SESSION_IDLE_MINUTES || '15');
 
 module.exports = async function auth(req, res, next) {
   try {
-    const token = req.cookies?.token;
+    // Soporte para cookie o header Authorization
+    const token = req.cookies?.token || req.header('Authorization')?.replace('Bearer ', '');
+    
     if (!token) {
       return res.status(401).json({ error: 'No autenticado' });
     }
@@ -23,13 +25,25 @@ module.exports = async function auth(req, res, next) {
       where: { id: payload.id },
     });
 
-    if (!user || !user.isActive) {
+    if (!user) {
       res.clearCookie('token', {
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
       });
-      return res.status(401).json({ error: 'Usuario inactivo o no encontrado' });
+      return res.status(401).json({ error: 'Usuario no encontrado' });
+    }
+
+    // ⚠️ Validar si está deshabilitado
+    if (!user.isActive) {
+      res.clearCookie('token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
+      return res.status(403).json({ 
+        error: 'Tu cuenta ha sido deshabilitada. Contacta al administrador.' 
+      });
     }
 
     // ⏱️ Check de inactividad

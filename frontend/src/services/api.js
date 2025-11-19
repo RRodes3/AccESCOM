@@ -43,3 +43,9 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+// Obtener últimos accesos con paginación
+export const getLastAccesses = (params = {}) => {
+  const { take = 10, skip = 0 } = params;
+  return api.get(`/qr/last-accesses?take=${take}&skip=${skip}`);
+};
