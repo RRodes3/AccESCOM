@@ -69,11 +69,12 @@ export default function LastAccessesTable() {
         {error && <div className="alert alert-danger">{error}</div>}
         
         <div className="table-responsive">
-          <table className="table table-hover">
+          <table className="table table-hover last-accesses-table">
             <thead>
               <tr>
                 <th>Fecha</th>
                 <th>Usuario/Invitado</th>
+                <th className="col-motivo">Motivo</th>
                 <th>Tipo</th>
                 <th>Acción</th>
               </tr>
@@ -81,7 +82,7 @@ export default function LastAccessesTable() {
             <tbody>
               {accesses.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="text-center text-muted">
+                  <td colSpan="5" className="text-center text-muted">
                     No hay registros
                   </td>
                 </tr>
@@ -89,9 +90,12 @@ export default function LastAccessesTable() {
                 accesses.map((access) => {
                   const userName = access.user?.name || access.guest?.name || 'Desconocido';
                   const userBoleta = access.user?.boleta || '';
+                  const guestCurp = access.guest?.curp || '';
+                  const guestReason = access.guest?.reason || '';
                   const qrKind = access.qr?.kind || '-';
                   const action = access.action || '-';
-                  
+                  const isGuest = !!access.guest;
+
                   return (
                     <tr key={access.id}>
                       <td>{new Date(access.createdAt).toLocaleString('es-MX')}</td>
@@ -105,7 +109,12 @@ export default function LastAccessesTable() {
                           />
                         )}
                         {userName}
-                        {userBoleta && <span className="text-muted"> ({userBoleta})</span>}
+                        {isGuest
+                          ? guestCurp && <span className="text-muted"> ({guestCurp})</span>
+                          : userBoleta && <span className="text-muted"> ({userBoleta})</span>}
+                      </td>
+                      <td className="col-motivo">
+                        {isGuest ? (guestReason || <span className="text-muted">—</span>) : <span className="text-muted">—</span>}
                       </td>
                       <td>
                         <span className={`badge bg-${qrKind === 'ENTRY' ? 'success' : 'warning'}`}>

@@ -70,8 +70,10 @@ router.post('/users', auth, requireRole(['ADMIN']), async (req, res) => {
       boleta, firstName, lastNameP, lastNameM,
       email, password,
       role = 'GUARD',
-      institutionalType // opcional: STUDENT | TEACHER | PAE (solo si role = USER)
+      institutionalType, // opcional
+      overrideGuard
     } = req.body || {};
+    overrideGuard = !!overrideGuard;
 
     boleta     = (boleta || '').trim();
     firstName  = sanitizeName(firstName);
@@ -99,7 +101,26 @@ router.post('/users', auth, requireRole(['ADMIN']), async (req, res) => {
     }
 
     const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) return res.status(409).json({ error: 'El correo ya existe' });
+    if (exists) {
+      if (exists.role === 'GUARD' && overrideGuard) {
+        const name = buildFullName(firstName, lastNameP, lastNameM);
+        const hash = await bcrypt.hash(password, 10);
+        const updated = await prisma.user.update({
+          where: { id: exists.id },
+          data: {
+            boleta, firstName, lastNameP, lastNameM,
+            name, password: hash,
+            institutionalType: null // guardias no llevan institutionalType
+          },
+          select: {
+            id: true, name: true, email: true, role: true, boleta: true,
+            institutionalType: true, isActive: true, createdAt: true
+          }
+        });
+        return res.json({ ok: true, user: updated, updated: true });
+      }
+      return res.status(409).json({ error: 'El correo ya existe' });
+    }
 
     const name = buildFullName(firstName, lastNameP, lastNameM);
     const hash = await bcrypt.hash(password, 10);
@@ -535,6 +556,104 @@ router.get('/report', auth, requireRole(['ADMIN']), async (req, res) => {
   } catch (err) {
     console.error('ADMIN /report error:', err);
     return res.status(500).json({ error: 'No se pudo obtener el reporte' });
+  }
+});
+
+/** POST /api/admin/users/bulk-action
+ * Body: { ids:number[], mode:'soft'|'anonymize'|'hard', anonymizeEmail?:boolean }
+ */
+router.post('/users/bulk-action', auth, requireRole(['ADMIN']), async (req, res) => {
+  const { ids, mode = 'soft', anonymizeEmail = true } = req.body || {};
+  const validModes = ['soft','anonymize','hard'];
+  if (!Array.isArray(ids) || !ids.length) {
+    return res.status(400).json({ error: 'ids vacío' });
+  }
+  if (!validModes.includes(mode)) {
+    return res.status(400).json({ error: 'mode inválido' });
+  }
+  const uniqueIds = [...new Set(ids)].filter(n => Number.isInteger(n) && n > 0);
+  if (!uniqueIds.length) return res.status(400).json({ error: 'ids inválidos' });
+
+  try {
+    const users = await prisma.user.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id:true, role:true, isActive:true, enabled:true }
+    });
+    const map = new Map(users.map(u => [u.id, u]));
+
+    // Pre-chequeo global para no dejar sin ADMIN activo
+    if (['soft','anonymize','hard'].includes(mode)) {
+      const totalActiveAdmins = await prisma.user.count({
+        where: { role:'ADMIN', isActive:true, enabled:true }
+      });
+      const targetedActiveAdmins = users.filter(u => u.role==='ADMIN' && u.isActive && u.enabled).length;
+      if (totalActiveAdmins - targetedActiveAdmins <= 0) {
+        return res.status(400).json({ error: 'La acción dejaría sin ADMIN activo.' });
+      }
+    }
+
+    const errors = [];
+    let soft=0, anonymized=0, hard=0, processed=0;
+
+    for (const id of uniqueIds) {
+      const u = map.get(id);
+      if (!u) { errors.push({ id, error:'No encontrado' }); continue; }
+      try {
+        if (mode === 'soft') {
+          // protección último admin activo individual
+          if (u.role==='ADMIN' && u.isActive) {
+            const remaining = await prisma.user.count({
+              where:{ role:'ADMIN', isActive:true, enabled:true, id:{ not: u.id } }
+            });
+            if (!remaining) { errors.push({ id, error:'Último ADMIN activo' }); continue; }
+          }
+          await prisma.user.update({ where:{ id:u.id }, data:{ isActive:false, enabled:false } });
+          soft++; processed++;
+        } else if (mode === 'anonymize') {
+          if (u.role==='ADMIN' && u.isActive) {
+            const remaining = await prisma.user.count({
+              where:{ role:'ADMIN', isActive:true, enabled:true, id:{ not: u.id } }
+            });
+            if (!remaining) { errors.push({ id, error:'Último ADMIN activo' }); continue; }
+          }
+          const anonEmail = anonymizeEmail ? `deleted_${u.id}_${Date.now()}@example.invalid` : undefined;
+          await prisma.user.update({
+            where:{ id:u.id },
+            data:{
+              name:'[ELIMINADO]',
+              firstName:null,lastNameP:null,lastNameM:null,
+              boleta:null, photoUrl:null,
+              email: anonEmail || undefined,
+              isActive:false, enabled:false
+            }
+          });
+          anonymized++; processed++;
+        } else if (mode === 'hard') {
+          if (u.role==='ADMIN' && u.isActive) {
+            const remaining = await prisma.user.count({
+              where:{ role:'ADMIN', isActive:true, enabled:true, id:{ not: u.id } }
+            });
+            if (!remaining) { errors.push({ id, error:'Último ADMIN activo' }); continue; }
+          }
+          await prisma.user.delete({ where:{ id:u.id } });
+          hard++; processed++;
+        }
+      } catch (inner) {
+        errors.push({ id, error: inner.message });
+      }
+    }
+
+    return res.json({
+      ok:true,
+      summary:{
+        requested: uniqueIds.length,
+        processed, soft, anonymized, hard,
+        errors
+      }
+    });
+  } catch (e) {
+    console.error('BULK ACTION ERROR', e);
+    return res.status(500).json({ error:'Fallo interno' });
   }
 });
 

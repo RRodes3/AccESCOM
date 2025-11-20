@@ -6,9 +6,11 @@ import {
   createUser,
   deleteUser,
   deactivateUser,
-  restoreUser
+  restoreUser,
+  bulkUserAction
 } from '../services/admin';
 import { Link } from 'react-router-dom';
+import './AdminUsers.css';
 
 const RE_LETTERS   = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 const RE_BOLETA    = /^\d{10}$/;
@@ -61,6 +63,10 @@ export default function AdminUsers() {
   const [modalUser, setModalUser] = useState(null);
   const [modalMode, setModalMode] = useState(''); // '' = mostrando botones, 'soft'/'anonymize'/'hard' = mostrando confirmación
   const [modalConfirm, setModalConfirm] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState('');
+  const [bulkConfirm, setBulkConfirm] = useState(false);
 
   const validate = (f) => {
     const e = {};
@@ -132,15 +138,16 @@ export default function AdminUsers() {
     setSending(true);
     try {
       const payload = {
-        boleta: form.boleta,
-        firstName: form.firstName.trim(),
-        lastNameP: form.lastNameP.trim(),
-        lastNameM: form.lastNameM.trim(),
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        role: form.role,
-        ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {})
-      };
+         boleta: form.boleta,
+         firstName: form.firstName.trim(),
+         lastNameP: form.lastNameP.trim(),
+         lastNameM: form.lastNameM.trim(),
+         email: form.email.trim().toLowerCase(),
+         password: form.password,
+         role: form.role,
+         ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {}),
+         ...(form.role === 'GUARD' && form.overrideGuard ? { overrideGuard: true } : {})
+       };
       await createUser(payload);
       setForm({ 
         boleta:'', firstName:'', lastNameP:'', lastNameM:'', 
@@ -207,6 +214,31 @@ export default function AdminUsers() {
     }
   };
 
+  const bulkPerformAction = async () => {
+    if (!bulkMode || !selected.length) return;
+    if (!bulkConfirm) {
+      alert('Debes marcar la casilla de confirmación.');
+      return;
+    }
+    try {
+      for (const id of selected) {
+        if (bulkMode === 'soft') {
+          await deactivateUser(id);
+        } else if (bulkMode === 'anonymize') {
+          await deleteUser(id, 'anonymize', { anonymizeEmail: true });
+        } else if (bulkMode === 'hard') {
+          await deleteUser(id, 'hard');
+        }
+      }
+      await load();
+      setBulkModalOpen(false);
+      setSelected([]);
+    } catch (e) {
+      console.error(e);
+      alert(e?.response?.data?.error || 'Acción masiva fallida');
+    }
+  };
+
   const pages = Math.ceil(total / take) || 1;
   const page = Math.floor(skip / take) + 1;
 
@@ -269,12 +301,37 @@ export default function AdminUsers() {
         <span className="badge bg-info text-dark me-1">Anonimizar</span> Borra datos personales y deja un registro neutro (irreversible).<br />
         <span className="badge bg-danger me-1">Eliminar definitivo</span> Borra el registro por completo (irreversible).
       </div>
+      {selected.length > 0 && (
+        <div className="alert alert-primary d-flex justify-content-between align-items-center">
+          <div>
+            Seleccionados: {selected.length}{' '}
+            <button className="btn btn-sm btn-outline-secondary ms-2" onClick={() => setSelected([])}>
+              Limpiar selección
+            </button>
+          </div>
+          <div className="d-flex gap-2">
+            <button className="btn btn-sm btn-warning" onClick={() => { setBulkMode('soft'); setBulkConfirm(false); setBulkModalOpen(true); }}>Desactivar</button>
+            <button className="btn btn-sm btn-info text-white" onClick={() => { setBulkMode('anonymize'); setBulkConfirm(false); setBulkModalOpen(true); }}>Anonimizar</button>
+            <button className="btn btn-sm btn-danger" onClick={() => { setBulkMode('hard'); setBulkConfirm(false); setBulkModalOpen(true); }}>Eliminar definitivo</button>
+          </div>
+        </div>
+      )}
 
       {/* Tabla */}
       <div className="table-responsive mt-3">
         <table className="table table-sm table-striped align-middle">
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={selected.length === items.length && items.length > 0}
+                  onChange={e => {
+                    if (e.target.checked) setSelected(items.map(i => i.id));
+                    else setSelected([]);
+                  }}
+                />
+              </th>
               <th>Boleta</th>
               <th>Nombre</th>
               <th>Correo</th>
@@ -283,16 +340,25 @@ export default function AdminUsers() {
               <th>Estado</th>
               <th>Creado</th>
               <th>Contraseña por defecto</th>
-              <th style={{width:260}}>Acciones</th>
+              <th style={{ width: 260 }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9}>Cargando…</td></tr>
+              <tr><td colSpan={10}>Cargando…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={9}>Sin resultados</td></tr>
+              <tr><td colSpan={10}>Sin resultados</td></tr>
             ) : items.map(u => (
               <tr key={u.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(u.id)}
+                    onChange={e => {
+                      setSelected(s => e.target.checked ? [...s, u.id] : s.filter(x => x !== u.id));
+                    }}
+                  />
+                </td>
                 <td>{u.boleta}</td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
@@ -305,39 +371,39 @@ export default function AdminUsers() {
                 </td>
                 <td>{new Date(u.createdAt).toLocaleString()}</td>
                 <td>
-                  {u.defaultPassword ? (
-                    <code className="bg-light p-1 rounded">{u.defaultPassword}</code>
-                  ) : (
-                    <span className="text-muted">—</span>
-                  )}
+                  {u.defaultPassword
+                    ? <code className="bg-light p-1 rounded">{u.defaultPassword}</code>
+                    : <span className="text-muted">—</span>}
                 </td>
-                <td className="d-flex flex-wrap gap-2">
-                  {u.isActive ? (
-                    <button
-                      className="btn btn-sm btn-outline-success"
-                      title="Ver opciones de gestión del usuario."
-                      onClick={() => openModalFor(u)}
-                    >
-                      Gestionar
-                    </button>
-                  ) : (
-                    <>
+                <td className="actions-cell">
+                  <div className="d-flex align-items-center gap-2">
+                    {u.isActive ? (
                       <button
                         className="btn btn-sm btn-outline-success"
-                        title="Restaura el acceso del usuario desactivado."
-                        onClick={() => onRestore(u.id)}
-                      >
-                        Reactivar
-                      </button>
-                      <button
-                        className="btn btn-sm btn-outline-danger"
                         title="Ver opciones de gestión del usuario."
                         onClick={() => openModalFor(u)}
                       >
                         Gestionar
                       </button>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <button
+                          className="btn btn-sm btn-outline-success"
+                          title="Restaura el acceso del usuario desactivado."
+                          onClick={() => onRestore(u.id)}
+                        >
+                          Reactivar
+                        </button>
+                        <button
+                          className="btn btn-sm btn-outline-danger"
+                          title="Ver opciones de gestión del usuario."
+                          onClick={() => openModalFor(u)}
+                        >
+                          Gestionar
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -411,6 +477,19 @@ export default function AdminUsers() {
               <option value="USER">Usuario Institucional</option>
             </select>
             {errors.role && <div className="invalid-feedback d-block">{errors.role}</div>}
+           {form.role === 'GUARD' && (
+             <div className="form-check mt-2">
+               <input
+                 type="checkbox"
+                 className="form-check-input"
+                 checked={!!form.overrideGuard}
+                 onChange={e => setForm(f => ({ ...f, overrideGuard: e.target.checked }))}
+               />
+               <label className="form-check-label small">
+                 Sobrescribir guardia existente (mismo correo)
+               </label>
+             </div>
+           )}
           </div>
           <div className="col-md-3">
             <label className="form-label">Sub-rol institucional</label>
@@ -569,16 +648,16 @@ export default function AdminUsers() {
                         </div>
                       )}
 
-                      <div className="form-check p-3 border rounded bg-light">
+                      <div className="confirm-block border rounded bg-light mt-2">
                         <input
-                          id="confirmBox"
+                          id="confirmUser"
                           type="checkbox"
                           className="form-check-input"
                           checked={modalConfirm}
                           onChange={(e) => setModalConfirm(e.target.checked)}
                         />
-                        <label htmlFor="confirmBox" className="form-check-label fw-bold">
-                          {modalMode === 'soft' 
+                        <label htmlFor="confirmUser" className="mb-0">
+                          {modalMode === 'soft'
                             ? 'Confirmo que deseo desactivar este usuario.'
                             : 'Confirmo que comprendo que esta acción es IRREVERSIBLE y acepto las consecuencias.'}
                         </label>
@@ -616,6 +695,75 @@ export default function AdminUsers() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Modal de acciones masivas */}
+      {bulkModalOpen && (
+        <div className="modal fade show" style={{ display:'block', background:'rgba(0,0,0,0.5)' }} onClick={() => setBulkModalOpen(false)}>
+          <div className="modal-dialog modal-lg modal-dialog-centered" onClick={e => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Acción masiva: {bulkMode}</h5>
+                <button type="button" className="btn-close" onClick={() => setBulkModalOpen(false)} />
+              </div>
+              <div className="modal-body">
+                <p className="mb-2">Usuarios seleccionados: {selected.length}</p>
+                {bulkMode === 'soft' && (
+                  <div className="alert alert-warning small">
+                    Desactivará temporalmente todos los usuarios seleccionados (reversible).
+                  </div>
+                )}
+                {bulkMode === 'anonymize' && (
+                  <div className="alert alert-info small">
+                    Anonimizará datos personales. Acción irreversible.
+                  </div>
+                )}
+                {bulkMode === 'hard' && (
+                  <div className="alert alert-danger small">
+                    Eliminará definitivamente los registros. Acción irreversible.
+                  </div>
+                )}
+                <div className="confirm-block border rounded bg-light mt-2">
+                  <input
+                    id="bulkConfirm"
+                    type="checkbox"
+                    className="form-check-input"
+                    checked={bulkConfirm}
+                    onChange={e => setBulkConfirm(e.target.checked)}
+                  />
+                  <label htmlFor="bulkConfirm" className="mb-0">
+                    Confirmo que deseo aplicar esta acción a {selected.length} usuario(s).
+                  </label>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setBulkModalOpen(false)}>Cancelar</button>
+                <button
+                  className={`btn ${
+                    bulkMode === 'soft' ? 'btn-warning' :
+                    bulkMode === 'anonymize' ? 'btn-info' : 'btn-danger'
+                  }`}
+                  disabled={!bulkConfirm}
+                  onClick={async () => {
+                    try {
+                      const resp = await bulkUserAction(selected, bulkMode);
+                      alert(`Procesados: ${resp.data.summary.processed}. Errores: ${resp.data.summary.errors.length}`);
+                      setBulkModalOpen(false);
+                      setSelected([]);
+                      await load();
+                    } catch (e) {
+                      alert(e?.response?.data?.error || 'Acción masiva falló');
+                    }
+                  }}
+                >
+                  {bulkMode === 'soft' && 'Desactivar seleccionados'}
+                  {bulkMode === 'anonymize' && 'Anonimizar seleccionados'}
+                  {bulkMode === 'hard' && 'Eliminar definitivamente'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

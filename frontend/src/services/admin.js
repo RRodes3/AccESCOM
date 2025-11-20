@@ -42,3 +42,10 @@ export function deleteUser(id, mode = 'hard', options = {}) {
   }
   return api.delete(`/admin/users/${id}?${params.toString()}`);
 }
+
+export function bulkUserAction(ids, mode='soft', options={}) {
+  return api.post('/admin/users/bulk-action', {
+    ids, mode,
+    anonymizeEmail: options.anonymizeEmail !== false
+  });
+}

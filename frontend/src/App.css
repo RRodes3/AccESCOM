@@ -44,3 +44,10 @@
   100%{ transform: scale(1); filter:none; }
 }
 
+.last-accesses-table th.col-motivo,
+.last-accesses-table td.col-motivo {
+  width: 20%;
+  max-width: 0;      /* permite que el texto envuelva */
+  white-space: normal;
+}
+

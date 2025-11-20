@@ -4,3 +4,54 @@
 .admin-users .form-label {
   font-weight: 600;
 }
+
+/* Centrar verticalmente la celda de acciones */
+td.actions-cell {
+  vertical-align: middle !important;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+/* Evitar que el botón se “pegue” arriba si la fila es alta */
+td.actions-cell > .d-flex {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* Asegurar altura mínima suave si hay multi-línea en otras celdas */
+td.actions-cell .btn {
+  line-height: 1.1;
+}
+
+.confirm-block {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f8f9fa;
+  font-size: 0.95rem;
+}
+
+.confirm-block .form-check-input {
+  margin: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+}
+
+.confirm-block label {
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.modal-body .alert + .confirm-block {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 576px) {
+  .confirm-block {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}

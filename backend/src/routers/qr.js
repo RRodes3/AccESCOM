@@ -1040,14 +1040,14 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
 // ─────────────────────────────────────────────────────────────
 router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   try {
-    const take = Math.min(parseInt(req.query.take || '10', 10), 50); // máx 50 por página
+    const take = Math.min(parseInt(req.query.take || '10', 10), 50);
     const skip = Math.max(0, parseInt(req.query.skip || '0', 10));
 
     const [accesses, total] = await Promise.all([
       prisma.accessLog.findMany({
         where: {
           action: {
-            not: 'ISSUE' // ← FILTRAR registros de tipo ISSUE
+            not: 'ISSUE'
           }
         },
         take,
@@ -1069,6 +1069,8 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
               firstName: true,
               lastNameP: true,
               lastNameM: true,
+              curp: true,
+              reason: true
             }
           },
           qr: {
@@ -1079,20 +1081,17 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
       prisma.accessLog.count({
         where: {
           action: {
-            not: 'ISSUE' // ← También filtrar en el contador
+            not: 'ISSUE'
           }
         }
       }),
     ]);
 
-    // Normalizar nombre de invitado
     const normalized = accesses.map(a => ({
       ...a,
       guest: a.guest ? {
         ...a.guest,
-        name: [a.guest.firstName, a.guest.lastNameP, a.guest.lastNameM]
-          .filter(Boolean)
-          .join(' ')
+        name: [a.guest.firstName, a.guest.lastNameP, a.guest.lastNameM].filter(Boolean).join(' '),
       } : null
     }));
 

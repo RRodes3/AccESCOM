@@ -30,17 +30,16 @@ async function resetInsideUsers() {
     data: { accessState: 'OUTSIDE' },
   });
 
-  // Ajusta a tu esquema real de accessLog
   await prisma.accessLog.createMany({
     data: ids.map((id) => ({
       userId: id,
-      action: 'AUTO_RESET',
+      action: 'VALIDATE_ALLOW', // reutilizado
       kind: 'EXIT',
-      description: 'Salida automática diaria a las 23:00',
     })),
     skipDuplicates: true,
   });
 
+  // (omitimos AccessLog porque enum no soporta AUTO_RESET)
   console.log(`[AUTO-RESET] Usuarios reseteados: ${ids.length}`);
 }
 

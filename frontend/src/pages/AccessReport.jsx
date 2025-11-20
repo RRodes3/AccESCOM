@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import './AccessReport.css';
 
 const roleEs = (r) =>
   ({
@@ -9,19 +10,26 @@ const roleEs = (r) =>
     GUEST: 'Invitado',
   }[r] || r);
 
+const subRolEs = (t) =>
+  ({
+    STUDENT: 'Estudiante',
+    TEACHER: 'Profesor',
+    PAE: 'PAE',
+  }[t] || (t || '—'));
+
 export default function AccessReport() {
   const [rows, setRows] = useState([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // --- filtros UI ---
-  const [from, setFrom] = useState(''); // yyyy-mm-dd
+  // filtros
+  const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [subjectType, setSubjectType] = useState(''); // INSTITUTIONAL | GUEST
-  const [institutionalType, setInstitutionalType] = useState(''); // STUDENT|TEACHER|PAE
-  const [accessType, setAccessType] = useState(''); // ENTRY|EXIT
-  const [result, setResult] = useState(''); // ALLOWED|DENIED|EXPIRED_QR|INVALID_QR
+  const [subjectType, setSubjectType] = useState('');
+  const [institutionalType, setInstitutionalType] = useState('');
+  const [accessType, setAccessType] = useState('');
+  const [result, setResult] = useState('');
 
   const buildQs = () => {
     const params = new URLSearchParams();
@@ -53,12 +61,7 @@ export default function AccessReport() {
   }
 
   useEffect(() => {
-    let mounted = true;
     fetchData();
-    return () => {
-      mounted = false;
-    };
-    // re-ejecutar cuando cambian filtros
   }, [from, to, subjectType, institutionalType, accessType, result]);
 
   // crea una vista "pretty" para la tabla (no elimina rows ni funciones previas)
@@ -95,11 +98,14 @@ export default function AccessReport() {
               : '—',
           accion,
           fullName,
-          rol: isGuest ? 'Invitado' : row.user?.role || '—',
+          rol: isGuest ? 'Invitado' : roleEs(row.user?.role) || '—',
+          subRol:
+            !isGuest && row.user?.institutionalType
+              ? subRolEs(row.user.institutionalType)
+              : '—',
           boleta: row.user?.boleta || '—',
           email: row.user?.email || '—',
           curp: row.guest?.curp || '—',
-          // motivo de visita (invitado) o reason general
           reason: row.guest?.reason || row.reason || '—',
           guard: row.guard?.name || '—',
         };
@@ -120,6 +126,7 @@ export default function AccessReport() {
       'Acción',
       'Nombre',
       'Rol',
+      'Sub-rol',
       'Boleta',
       'Email',
       'CURP',
@@ -136,6 +143,7 @@ export default function AccessReport() {
         r.accion || '',
         r.fullName || '',
         r.rol || '',
+        r.subRol || '',
         r.boleta || '',
         r.email || '',
         r.curp || '',
@@ -144,10 +152,11 @@ export default function AccessReport() {
       ];
 
       const csvRow = row
-        .map((v) =>
-          `"${(v ?? '')
-            .toString()
-            .replace(/"/g, '""')}"`
+        .map(
+          (v) =>
+            `"${(v ?? '')
+              .toString()
+              .replace(/"/g, '""')}"`
         )
         .join(',');
 
@@ -199,6 +208,7 @@ export default function AccessReport() {
                 <th>Acción</th>
                 <th>Nombre</th>
                 <th>Rol</th>
+                <th>Sub-rol</th>
                 <th>Boleta</th>
                 <th>Email</th>
                 <th>CURP</th>
@@ -216,6 +226,7 @@ export default function AccessReport() {
                   <td>${r.accion || ''}</td>
                   <td>${r.fullName || ''}</td>
                   <td>${r.rol || ''}</td>
+                  <td>${r.subRol || ''}</td>
                   <td>${r.boleta || ''}</td>
                   <td>${r.email || ''}</td>
                   <td>${r.curp || ''}</td>
@@ -332,6 +343,8 @@ export default function AccessReport() {
               <th>Tipo</th>
               <th>Acción</th>
               <th>Dueño QR</th>
+              <th>Rol</th>
+              <th>Sub-rol</th>
               <th>Identificadores</th>
               <th>Guardia</th>
               <th>Boleta</th>
@@ -346,15 +359,9 @@ export default function AccessReport() {
                 <td>{new Date(r.createdAt).toLocaleString()}</td>
                 <td>{r.tipo}</td>
                 <td>{r.accion}</td>
-                <td>
-                  {r.fullName}
-                  <div
-                    className="text-muted"
-                    style={{ fontSize: '0.85em' }}
-                  >
-                    {r.rol}
-                  </div>
-                </td>
+                <td>{r.fullName}</td>
+                <td>{r.rol}</td>
+                <td>{r.subRol}</td>
                 <td>
                   {r.curp !== '—' || r.reason !== '—' ? (
                     <>
@@ -385,7 +392,7 @@ export default function AccessReport() {
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={10} className="text-center text-muted">
+                <td colSpan={12} className="text-center text-muted">
                   Sin registros
                 </td>
               </tr>
