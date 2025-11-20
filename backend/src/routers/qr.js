@@ -388,6 +388,7 @@ router.post(
       const owner = buildOwner(pass);
       const accessType = pass.kind === 'EXIT' ? 'EXIT' : 'ENTRY';
       const now = new Date();
+      const isInstitutional = !!pass.userId; // 👈 clave: distinguir institucional vs invitado
 
       // 1) status distinto de ACTIVE
       if (pass.status !== 'ACTIVE') {
@@ -430,8 +431,8 @@ router.post(
         });
       }
 
-      // 2) expirado por fecha/hora
-      if (pass.expiresAt && pass.expiresAt <= now) {
+      // 2) expirado por fecha/hora (solo usuarios institucionales) 👈 MODIFICADO
+      if (isInstitutional && pass.expiresAt && pass.expiresAt <= now) {
         const reason = 'QR expirado. Solicita uno nuevo.';
         await prisma.qRPass.update({
           where: { id: pass.id },
@@ -885,7 +886,17 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
             institutionalType: true,
           },
         },
-        guest: true,
+        guest: {
+          select: {
+            id: true,
+            firstName: true,
+            lastNameP: true,
+            lastNameM: true,
+            curp: true,
+            reason: true,
+            state: true,
+          },
+        },
       },
     });
 
@@ -908,10 +919,12 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       }
 
       const now = new Date();
+      const isInstitutional = !!pass.userId;
+
       if (pass.status !== 'ACTIVE') {
         result = 'INVALID_QR';
         reason = 'QR no activo';
-      } else if (pass.expiresAt && pass.expiresAt < now) {
+      } else if (isInstitutional && pass.expiresAt && pass.expiresAt < now) {
         result = 'EXPIRED_QR';
         reason = 'QR vencido';
       } else {
@@ -934,6 +947,24 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       },
     });
 
+    // 👇 NUEVO: si es invitado y el escaneo fue permitido, marcar USED + actualizar estado
+    if (pass && pass.guestId && result === 'ALLOWED') {
+      // Marcar el QR como usado
+      await prisma.qRPass.update({
+        where: { id: pass.id },
+        data: { status: 'USED' },
+      });
+
+      // Actualizar estado del invitado
+      if (pass.guest) {
+        const newState = pass.kind === 'ENTRY' ? 'INSIDE' : 'COMPLETED';
+        await prisma.guestVisit.update({
+          where: { id: pass.guest.id },
+          data: { state: newState },
+        });
+      }
+    }
+
     // 📧 Enviar correo si es usuario institucional y el QR fue permitido
     if (
       result === 'ALLOWED' &&
@@ -950,7 +981,7 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
             pass.user.lastNameP,
             pass.user.lastNameM,
           ].filter(Boolean).join(' '),
-          type: accessType,      // 'ENTRY' o 'EXIT'
+          type: accessType,
           date: new Date(),
           locationName: 'ESCOM',
         }).catch(err => console.error('Email acceso async:', err));
@@ -1014,6 +1045,11 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
 
     const [accesses, total] = await Promise.all([
       prisma.accessLog.findMany({
+        where: {
+          action: {
+            not: 'ISSUE' // ← FILTRAR registros de tipo ISSUE
+          }
+        },
         take,
         skip,
         orderBy: { createdAt: 'desc' },
@@ -1040,7 +1076,13 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
           },
         },
       }),
-      prisma.accessLog.count(), // total de registros
+      prisma.accessLog.count({
+        where: {
+          action: {
+            not: 'ISSUE' // ← También filtrar en el contador
+          }
+        }
+      }),
     ]);
 
     // Normalizar nombre de invitado
@@ -1070,4 +1112,4 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
   }
 });
 
-module.exports = router;
+module.exports = router;  // ← Esta es la ÚNICA exportación, al final del archivo

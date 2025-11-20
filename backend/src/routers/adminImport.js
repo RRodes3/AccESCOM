@@ -9,6 +9,10 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
 const bcrypt = require('bcryptjs');
 
+// ✅ AGREGAR AQUÍ (después de las otras importaciones, antes de "const prisma")
+const { importUsersWithPhotos } = require('../../scripts/importWithPhotos');
+const { importCSV } = require('../../scripts/importCSV');
+
 const prisma = new PrismaClient();
 
 // ───── Multer: memoria y disco, 50MB, CSV/XLSX/ZIP ────────────────────────────
@@ -408,61 +412,49 @@ router.post(
 
 // ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import ────────
 router.post(
-  '/import',
+  '/import/:type',
   auth,
   requireRole(['ADMIN']),
   uploadDisk.single('file'),
   async (req, res) => {
+    const { type } = req.params;
     const { file } = req;
+    const dryRun = String(req.query.dryRun || '').toLowerCase() === 'true';
+    const conflictAction = String(req.query.conflictAction || 'exclude').toLowerCase(); // exclude|overwrite|delete
 
     if (!file) {
       return res.status(400).json({ error: 'No se ha enviado ningún archivo.' });
     }
 
+    if (!['csv', 'zip'].includes(type)) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      return res.status(400).json({ error: 'Tipo debe ser csv o zip' });
+    }
+
     try {
       let response;
 
-      // Si el archivo es ZIP (contiene CSV y fotos)
-      if (
-        file.mimetype === 'application/zip' ||
-        file.mimetype === 'application/x-zip-compressed'
-      ) {
-        // Cargar dinámicamente el script de importación con fotos
-        const { importUsersWithPhotos } = require('../scripts/importWithPhotos');
-        
-        // Procesar ZIP: extraer CSV y fotos, luego importar
-        response = await importUsersWithPhotos(file.path);
-      }
-      // Si el archivo es un CSV simple
-      else if (file.mimetype === 'text/csv') {
-        // Cargar dinámicamente el script de importación CSV
-        const { importCSV } = require('../scripts/importCSV');
-        
-        // Procesar CSV sin fotos
-        response = await importCSV(file.path);
+      if (type === 'zip') {
+        // NUEVO: importación con soporte dryRun y acciones de conflicto
+        const { importUsersWithPhotosDryRun, importUsersWithPhotosReal } = require('../../scripts/importWithPhotosActions');
+
+        if (dryRun) {
+          response = await importUsersWithPhotosDryRun(file.path);
+        } else {
+            response = await importUsersWithPhotosReal(file.path, { conflictAction });
+        }
       } else {
-        // Limpiar archivo temporal
-        fs.unlinkSync(file.path);
-        return res.status(400).json({ error: 'Tipo de archivo no válido. Use CSV o ZIP.' });
+        // CSV “suave” existente (sin fotos) — opcional: podrías también extender a dryRun si no lo tienes.
+        const { importCSV } = require('../../scripts/importCSV');
+        response = await importCSV(file.path);
       }
 
-      // Limpiar archivo temporal después de procesarlo
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
-      res.json({
-        message: 'Datos importados exitosamente',
-        data: response,
-      });
+      res.json(response);
     } catch (error) {
       console.error('ERROR EN /import:', error);
-      
-      // Limpiar archivo temporal en caso de error
-      if (file?.path && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
-
+      if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
       res.status(500).json({
         error: 'Hubo un error al procesar el archivo',
         details: error.message,

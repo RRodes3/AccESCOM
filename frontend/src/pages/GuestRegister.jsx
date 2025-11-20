@@ -64,12 +64,12 @@ export default function GuestRegister() {
 
         <label className="form-label">Nombre(s)</label>
         <input name="firstName" className={`form-control ${showErrors && errors.firstName ? 'is-invalid' : ''}`}
-               value={form.firstName} onChange={onChange} placeholder="Ej. Ana" />
+               value={form.firstName} onChange={onChange} placeholder="Obligatorio" />
         <FieldError name="firstName" />
 
         <label className="form-label mt-2">Apellido Paterno</label>
         <input name="lastNameP" className={`form-control ${showErrors && errors.lastNameP ? 'is-invalid' : ''}`}
-               value={form.lastNameP} onChange={onChange} placeholder="Ej. Cruz" />
+               value={form.lastNameP} onChange={onChange} placeholder="Obligatorio" />
         <FieldError name="lastNameP" />
 
         <label className="form-label mt-2">Apellido Materno</label>

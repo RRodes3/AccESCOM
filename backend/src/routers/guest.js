@@ -12,7 +12,7 @@ const RE_CURP = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/i;
 // Motivo: letras/dígitos/espacios y símbolos comunes (UNICODE)
 const RE_REASON = /^[\p{L}\p{N}\s.,#()\-\u0023]{5,160}$/u; // permite #, -, paréntesis, etc.
 
-const TTL_MIN = Math.max(1, parseInt(process.env.GUEST_QR_TTL_MINUTES || '60', 10)); // 60 min por defecto
+const TTL_MIN = Math.max(1, parseInt(process.env.GUEST_QR_TTL_MINUTES || '60', 10)); // 60 min por defecto (solo para expiresAt de visita)
 const now = () => new Date();
 const addMin = (d, m) => new Date(d.getTime() + m * 60000);
 const rnd = () => crypto.randomBytes(16).toString('hex');
@@ -111,15 +111,25 @@ router.post('/register', async (req, res) => {
         let entry = current.find(p => p.kind === 'ENTRY');
         let exit  = current.find(p => p.kind === 'EXIT');
 
-        // Crea los que falten
+        // Crea los que falten SIN expiración por tiempo (expiresAt: null)
         if (!entry) {
           entry = await tx.qRPass.create({
-            data: { code: rnd(), guestId: visit.id, kind: 'ENTRY', expiresAt },
+            data: { 
+              code: rnd(), 
+              guestId: visit.id, 
+              kind: 'ENTRY', 
+              expiresAt: null  // ← SIN expiración por tiempo
+            },
           });
         }
         if (!exit) {
           exit = await tx.qRPass.create({
-            data: { code: rnd(), guestId: visit.id, kind: 'EXIT', expiresAt },
+            data: { 
+              code: rnd(), 
+              guestId: visit.id, 
+              kind: 'EXIT', 
+              expiresAt: null  // ← SIN expiración por tiempo
+            },
           });
         }
 
@@ -176,19 +186,33 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 4) No hay visita vigente → crea visita + 2 QR
+    // 4) No hay visita vigente → crea visita + 2 QR SIN expiración por tiempo
     const result = await prisma.$transaction(async (tx) => {
       const visit = await tx.guestVisit.create({
         data: {
           firstName, lastNameP, lastNameM, curp, reason,
           expiresAt: addMin(now(), TTL_MIN),
-          state: 'OUTSIDE', // por si tu enum lo requiere
+          state: 'OUTSIDE',
         },
       });
 
       const [entry, exit] = await Promise.all([
-        tx.qRPass.create({ data: { code: rnd(), guestId: visit.id, kind: 'ENTRY', expiresAt: visit.expiresAt } }),
-        tx.qRPass.create({ data: { code: rnd(), guestId: visit.id, kind: 'EXIT',  expiresAt: visit.expiresAt } }),
+        tx.qRPass.create({ 
+          data: { 
+            code: rnd(), 
+            guestId: visit.id, 
+            kind: 'ENTRY', 
+            expiresAt: null  // ← SIN expiración por tiempo
+          } 
+        }),
+        tx.qRPass.create({ 
+          data: { 
+            code: rnd(), 
+            guestId: visit.id, 
+            kind: 'EXIT', 
+            expiresAt: null  // ← SIN expiración por tiempo
+          } 
+        }),
       ]);
 
       return { visit, entry, exit };

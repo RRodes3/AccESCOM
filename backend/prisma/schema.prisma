@@ -101,7 +101,7 @@ model QRPass {
   id        Int         @id @default(autoincrement())
   code      String      @unique
   userId    Int?
-  user      User?       @relation(fields: [userId], references: [id])
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   guestId   Int?
   guest     GuestVisit? @relation(fields: [guestId], references: [id])
   kind      QRKind
@@ -115,7 +115,7 @@ model AccessLog {
   id Int @id @default(autoincrement())
 
   userId Int?
-  user   User? @relation("AccessByUser", fields: [userId], references: [id])
+  user   User? @relation("AccessByUser", fields: [userId], references: [id], onDelete: SetNull)
 
   guestId Int?
   guest   GuestVisit? @relation("AccessByGuest", fields: [guestId], references: [id])
@@ -127,7 +127,7 @@ model AccessLog {
   action AccessType
 
   guardId Int?
-  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id])
+  guard   User? @relation("ValidatedByGuard", fields: [guardId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 }
@@ -156,5 +156,5 @@ model QRAttempt {
   status       String    // Puede ser 'FAILED', 'SUCCESS', 'EXPIRED', etc.
   reason       String    // Razón del fallo, ej: 'QR Expirado', 'Intento Repetido'
 
-  user         User      @relation(fields: [userId], references: [id])
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

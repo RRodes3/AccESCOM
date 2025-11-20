@@ -17,20 +17,36 @@ const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
 const isInstitutional = (email) => RE_EMAIL_DOT.test((email || '').trim().toLowerCase()) || RE_EMAIL_COMPACT.test((email || '').trim().toLowerCase());
 
+const translateRole = (role) => {
+  const translations = {
+    'ADMIN': 'Administrador',
+    'GUARD': 'Guardia',
+    'USER': 'Usuario Institucional'
+  };
+  return translations[role] || role;
+};
+
+const translateInstitutionalType = (type) => {
+  const translations = {
+    'STUDENT': 'Estudiante',
+    'TEACHER': 'Profesor',
+    'PAE': 'PAE'
+  };
+  return translations[type] || type;
+};
 
 export default function AdminUsers() {
-  // --- Estado de formulario de alta ---
   const [form, setForm] = useState({
     boleta: '', firstName: '', lastNameP: '', lastNameM: '',
-    email: '', password: '', role: 'GUARD', institutionalType: '' // ← agregado
+    email: '', password: '', role: 'GUARD', institutionalType: ''
   });
   const [errors, setErrors] = useState({});
   const [msg, setMsg] = useState('');
   const [sending, setSending] = useState(false);
 
-  // --- Estado de lista ---
   const [query, setQuery] = useState('');
   const [role, setRole]   = useState('');
+  const [institutionalType, setInstitutionalType] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -40,7 +56,12 @@ export default function AdminUsers() {
   const [guests, setGuests] = useState([]);
   const [gTotal, setGTotal] = useState(0);
 
-  // --- Validación rápida del cliente ---
+  // Estado del modal: '' = sin selección, 'soft' | 'anonymize' | 'hard' = mostrando confirmación
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalUser, setModalUser] = useState(null);
+  const [modalMode, setModalMode] = useState(''); // '' = mostrando botones, 'soft'/'anonymize'/'hard' = mostrando confirmación
+  const [modalConfirm, setModalConfirm] = useState(false);
+
   const validate = (f) => {
     const e = {};
     if (!RE_BOLETA.test(f.boleta)) e.boleta = 'Boleta: 10 dígitos.';
@@ -54,11 +75,17 @@ export default function AdminUsers() {
   };
   const isValid = useMemo(() => Object.keys(validate(form)).length === 0, [form]);
 
-  // --- Cargar lista ---
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await listUsers({ query, role, take, skip, includeInactive });
+      const { data } = await listUsers({ 
+        query, 
+        role, 
+        institutionalType,
+        take, 
+        skip, 
+        includeInactive 
+      });
       setItems(data.items || []);
       setTotal(data.total || 0);
     } catch (e) {
@@ -68,7 +95,10 @@ export default function AdminUsers() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [query, role, skip, includeInactive]);
+  useEffect(() => { 
+    load(); 
+    /* eslint-disable-next-line */ 
+  }, [query, role, institutionalType, skip, includeInactive]);
   useEffect(() => {
     api.get('/admin/guests?take=100&skip=0')
       .then(({ data }) => {
@@ -78,7 +108,15 @@ export default function AdminUsers() {
       .catch(() => {});
   }, []);
 
-  // --- Handlers ---
+  useEffect(() => {
+    if (modalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [modalOpen]);
+
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm(f => ({ ...f, [name]: name === 'boleta' ? value.replace(/\D/g, '').slice(0,10) : value }));
@@ -104,7 +142,10 @@ export default function AdminUsers() {
         ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {})
       };
       await createUser(payload);
-      setForm({ boleta:'', firstName:'', lastNameP:'', lastNameM:'', email:'', password:'', role:'GUARD', institutionalType: '' });
+      setForm({ 
+        boleta:'', firstName:'', lastNameP:'', lastNameM:'', 
+        email:'', password:'', role:'GUARD', institutionalType: ''
+      });
       setSkip(0);
       await load();
       setMsg('Usuario creado correctamente');
@@ -114,17 +155,6 @@ export default function AdminUsers() {
       if (server?.errors) setErrors(server.errors);
     } finally {
       setSending(false);
-    }
-  };
-
-  const onDeactivate = async (id) => {
-    if (!window.confirm('¿Desactivar este usuario? Podrás reactivarlo después.')) return;
-    try {
-      await deactivateUser(id);
-      await load();
-    } catch (e) {
-      console.error(e);
-      alert('No se pudo desactivar (¿último ADMIN activo o tú mismo?).');
     }
   };
 
@@ -138,14 +168,42 @@ export default function AdminUsers() {
     }
   };
 
-  const onDelete = async (id) => {
-    if (!window.confirm('¿Eliminar DEFINITIVAMENTE? Si tiene QR/logs fallará.')) return;
+  const openModalFor = (user) => {
+    setModalUser(user);
+    setModalMode(''); // Sin selección inicial
+    setModalConfirm(false);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalUser(null);
+    setModalMode('');
+    setModalConfirm(false);
+  };
+
+  const performAction = async () => {
+    if (!modalUser || !modalMode) return;
+    if (!modalConfirm) {
+      alert('Debes marcar la casilla de confirmación.');
+      return;
+    }
     try {
-      await deleteUser(id);
+      if (modalMode === 'soft') {
+        await deactivateUser(modalUser.id);
+      } else if (modalMode === 'anonymize') {
+        await deleteUser(modalUser.id, 'anonymize', { anonymizeEmail: true });
+      } else if (modalMode === 'hard') {
+        await deleteUser(modalUser.id, 'hard');
+      } else {
+        alert('Modo inválido.');
+        return;
+      }
       await load();
+      closeModal();
     } catch (e) {
       console.error(e);
-      alert('No se pudo eliminar. Si tiene registros (QR/Logs), usa “Desactivar”.');
+      alert(e?.response?.data?.error || 'Acción fallida');
     }
   };
 
@@ -172,9 +230,22 @@ export default function AdminUsers() {
           <label className="form-label">Rol</label>
           <select className="form-select" value={role} onChange={e=>{ setSkip(0); setRole(e.target.value); }}>
             <option value="">Todos</option>
-            <option value="ADMIN">ADMIN</option>
-            <option value="GUARD">GUARD</option>
-            <option value="USER">USER</option>
+            <option value="ADMIN">Administrador</option>
+            <option value="GUARD">Guardia</option>
+            <option value="USER">Usuario Institucional</option>
+          </select>
+        </div>
+        <div className="col-md-3">
+          <label className="form-label">Sub-rol</label>
+          <select 
+            className="form-select" 
+            value={institutionalType} 
+            onChange={e => { setSkip(0); setInstitutionalType(e.target.value); }}
+          >
+            <option value="">Todos</option>
+            <option value="STUDENT">Estudiante</option>
+            <option value="TEACHER">Profesor</option>
+            <option value="PAE">PAE</option>
           </select>
         </div>
         <div className="col-md-3">
@@ -189,6 +260,14 @@ export default function AdminUsers() {
           <label className="form-label">Resultados</label>
           <input className="form-control" value={total} readOnly />
         </div>
+      </div>
+
+      {/* ↓ MENSAJE INFORMATIVO MOVIDO AQUÍ */}
+      <div className="alert alert-secondary small mt-3">
+        <strong>Acciones sobre usuarios:</strong><br />
+        <span className="badge bg-warning text-dark me-1">Desactivar</span> Deshabilita temporalmente (reversible).<br />
+        <span className="badge bg-info text-dark me-1">Anonimizar</span> Borra datos personales y deja un registro neutro (irreversible).<br />
+        <span className="badge bg-danger me-1">Eliminar definitivo</span> Borra el registro por completo (irreversible).
       </div>
 
       {/* Tabla */}
@@ -217,8 +296,8 @@ export default function AdminUsers() {
                 <td>{u.boleta}</td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
-                <td>{u.role}</td>
-                <td>{u.institutionalType || '-'}</td>
+                <td>{translateRole(u.role)}</td>
+                <td>{u.institutionalType ? translateInstitutionalType(u.institutionalType) : '-'}</td>
                 <td>
                   {u.isActive
                     ? <span className="badge bg-success">Activo</span>
@@ -234,17 +313,31 @@ export default function AdminUsers() {
                 </td>
                 <td className="d-flex flex-wrap gap-2">
                   {u.isActive ? (
-                    <button className="btn btn-sm btn-warning" onClick={()=>onDeactivate(u.id)}>
-                      Desactivar
+                    <button
+                      className="btn btn-sm btn-outline-success"
+                      title="Ver opciones de gestión del usuario."
+                      onClick={() => openModalFor(u)}
+                    >
+                      Gestionar
                     </button>
                   ) : (
-                    <button className="btn btn-sm btn-outline-success" onClick={()=>onRestore(u.id)}>
-                      Reactivar
-                    </button>
+                    <>
+                      <button
+                        className="btn btn-sm btn-outline-success"
+                        title="Restaura el acceso del usuario desactivado."
+                        onClick={() => onRestore(u.id)}
+                      >
+                        Reactivar
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline-danger"
+                        title="Ver opciones de gestión del usuario."
+                        onClick={() => openModalFor(u)}
+                      >
+                        Gestionar
+                      </button>
+                    </>
                   )}
-                  <button className="btn btn-sm btn-outline-danger" onClick={()=>onDelete(u.id)}>
-                    Eliminar
-                  </button>
                 </td>
               </tr>
             ))}
@@ -252,7 +345,7 @@ export default function AdminUsers() {
         </table>
       </div>
 
-      {/* Paginación simple */}
+      {/* Paginación */}
       <div className="d-flex justify-content-between align-items-center">
         <div>Página {page} de {pages}</div>
         <div className="btn-group">
@@ -305,7 +398,7 @@ export default function AdminUsers() {
             <input name="email" type="email"
                    className={`form-control ${errors.email ? 'is-invalid':''}`}
                    value={form.email} onChange={onChange}
-                   placeholder="ej. rrodasr1800@alumno.ipn.mx" />
+                   placeholder="ej. usuario@alumno.ipn.mx" />
             {errors.email && <div className="invalid-feedback d-block">{errors.email}</div>}
           </div>
           <div className="col-md-3">
@@ -313,9 +406,9 @@ export default function AdminUsers() {
             <select name="role"
                     className={`form-select ${errors.role ? 'is-invalid':''}`}
                     value={form.role} onChange={onChange}>
-              <option value="GUARD">GUARD</option>
-              <option value="ADMIN">ADMIN</option>
-              <option value="USER">USER</option>
+              <option value="GUARD">Guardia</option>
+              <option value="ADMIN">Administrador</option>
+              <option value="USER">Usuario Institucional</option>
             </select>
             {errors.role && <div className="invalid-feedback d-block">{errors.role}</div>}
           </div>
@@ -323,11 +416,11 @@ export default function AdminUsers() {
             <label className="form-label">Sub-rol institucional</label>
             <select name="institutionalType" className="form-select" value={form.institutionalType} onChange={onChange}>
               <option value="">(opcional)</option>
-              <option value="STUDENT">STUDENT</option>
-              <option value="TEACHER">TEACHER</option>
+              <option value="STUDENT">Estudiante</option>
+              <option value="TEACHER">Profesor</option>
               <option value="PAE">PAE</option>
             </select>
-            <div className="form-text">Sólo aplica si el rol es <strong>USER</strong>.</div>
+            <div className="form-text">Sólo aplica si el rol es <strong>Usuario Institucional</strong>.</div>
           </div>
           <div className="col-md-6">
             <label className="form-label">Contraseña</label>
@@ -348,38 +441,182 @@ export default function AdminUsers() {
         </div>
       </form>
 
-      {/* ...formulario de alta de usuario... */}
-
       <h5 className="mt-4">Invitados ({gTotal})</h5>
-        <div className="table-responsive">
-          <table className="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>CURP</th>
-                <th>Motivo</th>
-                <th>Estado</th>
-                <th>Creado</th>
-                <th>Expira</th>
+      <div className="table-responsive">
+        <table className="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>CURP</th>
+              <th>Motivo</th>
+              <th>Estado</th>
+              <th>Creado</th>
+              <th>Expira</th>
+            </tr>
+          </thead>
+          <tbody>
+            {guests.map(g => (
+              <tr key={g.id}>
+                <td>{[g.firstName, g.lastNameP, g.lastNameM].filter(Boolean).join(' ')}</td>
+                <td>{g.curp}</td> 
+                <td>{g.reason}</td>
+                <td>{g.state}</td>
+                <td>{new Date(g.createdAt).toLocaleString()}</td>
+                <td>{g.expiresAt ? new Date(g.expiresAt).toLocaleString() : '—'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {guests.map(g => (
-                <tr key={g.id}>
-                  <td>{[g.firstName, g.lastNameP, g.lastNameM].filter(Boolean).join(' ')}</td>
-                  <td>{g.curp}</td> 
-                  <td>{g.reason}</td>
-                  <td>{g.state}</td>
-                  <td>{new Date(g.createdAt).toLocaleString()}</td>
-                  <td>{g.expiresAt ? new Date(g.expiresAt).toLocaleString() : '—'}</td>
-                </tr>
-              ))}
-              {guests.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-muted">Sin invitados</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+            {guests.length === 0 && (
+              <tr><td colSpan={6} className="text-center text-muted">Sin invitados</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal de acciones sobre usuario */}
+      {modalOpen && modalUser && (
+        <>
+          <div className="modal fade show" style={{ display: 'block', background: 'rgba(0,0,0,0.5)' }} onClick={closeModal}>
+            <div className="modal-dialog modal-lg modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Acciones sobre usuario</h5>
+                  <button type="button" className="btn-close" onClick={closeModal} />
+                </div>
+                <div className="modal-body">
+                  
+
+                  <div className="mb-3 p-3 bg-light rounded">
+                    <strong>Usuario seleccionado:</strong><br />
+                    <code>{modalUser.email}</code><br />
+                    <small className="text-muted">
+                      Nombre: {modalUser.name || '—'} | Boleta: {modalUser.boleta || '—'} | Rol: {translateRole(modalUser.role)} | Sub-rol: {modalUser.institutionalType ? translateInstitutionalType(modalUser.institutionalType) : '—'}
+                    </small>
+                  </div>
+
+                  {!modalMode ? (
+                    <>
+                      <p className="fw-bold mb-3">Selecciona la acción que deseas realizar:</p>
+                      <div className="d-grid gap-2">
+                        <button
+                          className="btn btn-warning btn-lg text-start d-flex justify-content-between align-items-center"
+                          onClick={() => setModalMode('soft')}
+                        >
+                          <div>
+                            <strong>Desactivar (soft)</strong>
+                            <br />
+                            <small>Deshabilita acceso, conserva todos los datos. Reversible con "Reactivar".</small>
+                          </div>
+                          <span className="badge bg-dark">Reversible</span>
+                        </button>
+
+                        <button
+                          className="btn btn-info btn-lg text-white text-start d-flex justify-content-between align-items-center"
+                          onClick={() => setModalMode('anonymize')}
+                        >
+                          <div>
+                            <strong>Anonimizar</strong>
+                            <br />
+                            <small>Borra datos personales (nombre, apellidos, boleta, foto, email real). Deja un registro neutro.</small>
+                          </div>
+                          <span className="badge bg-dark">Irreversible</span>
+                        </button>
+
+                        <button
+                          className="btn btn-danger btn-lg text-start d-flex justify-content-between align-items-center"
+                          onClick={() => setModalMode('hard')}
+                        >
+                          <div>
+                            <strong>Eliminar definitivo</strong>
+                            <br />
+                            <small>Elimina el registro del usuario. Logs quedan sin referencia.</small>
+                          </div>
+                          <span className="badge bg-dark">Irreversible</span>
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="alert alert-primary d-flex justify-content-between align-items-center">
+                        <div>
+                          <strong>Has seleccionado:</strong>{' '}
+                          {modalMode === 'soft' && <span className="badge bg-warning text-dark">Desactivar</span>}
+                          {modalMode === 'anonymize' && <span className="badge bg-info text-dark">Anonimizar</span>}
+                          {modalMode === 'hard' && <span className="badge bg-danger">Eliminar definitivo</span>}
+                        </div>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => { setModalMode(''); setModalConfirm(false); }}
+                        >
+                          Cambiar
+                        </button>
+                      </div>
+
+                      {modalMode === 'hard' && (
+                        <div className="alert alert-danger py-2 small mb-3">
+                          <strong>⚠️ Advertencia:</strong> Esta acción eliminará el usuario permanentemente. Los registros de acceso permanecerán pero sin referencia (userId NULL).
+                        </div>
+                      )}
+
+                      {modalMode === 'anonymize' && (
+                        <div className="alert alert-info py-2 small mb-3">
+                          <strong>ℹ️ Nota:</strong> Al anonimizar se reemplaza correo por uno artificial y se borran nombres, boleta y foto. El registro permanece en la base de datos como <code>[ELIMINADO]</code>.
+                        </div>
+                      )}
+
+                      {modalMode === 'soft' && (
+                        <div className="alert alert-warning py-2 small mb-3">
+                          <strong>ℹ️ Nota:</strong> Podrás reactivar al usuario posteriormente desde la lista usando el botón "Reactivar".
+                        </div>
+                      )}
+
+                      <div className="form-check p-3 border rounded bg-light">
+                        <input
+                          id="confirmBox"
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={modalConfirm}
+                          onChange={(e) => setModalConfirm(e.target.checked)}
+                        />
+                        <label htmlFor="confirmBox" className="form-check-label fw-bold">
+                          {modalMode === 'soft' 
+                            ? 'Confirmo que deseo desactivar este usuario.'
+                            : 'Confirmo que comprendo que esta acción es IRREVERSIBLE y acepto las consecuencias.'}
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={closeModal}
+                  >
+                    Cancelar
+                  </button>
+                  {modalMode && (
+                    <button
+                      type="button"
+                      className={`btn ${
+                        modalMode === 'soft' ? 'btn-warning' :
+                        modalMode === 'anonymize' ? 'btn-info' :
+                        'btn-danger'
+                      }`}
+                      disabled={!modalConfirm}
+                      onClick={performAction}
+                    >
+                      {modalMode === 'soft' && 'Desactivar usuario'}
+                      {modalMode === 'anonymize' && 'Anonimizar usuario'}
+                      {modalMode === 'hard' && 'Eliminar definitivamente'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

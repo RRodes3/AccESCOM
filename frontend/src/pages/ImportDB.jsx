@@ -4,6 +4,7 @@ import "./ImportDB.css";
 
 export default function ImportDB() {
   const [tab, setTab] = useState("users"); // users | guests
+  const [importType, setImportType] = useState("csv"); // csv | zip
   const [file, setFile] = useState(null);
   const [conflictAction, setConflictAction] = useState("exclude"); // exclude | overwrite | delete
   const [loading, setLoading] = useState(false);
@@ -16,11 +17,30 @@ export default function ImportDB() {
   const [importResult, setImportResult] = useState(null);
   const [err, setErr] = useState("");
 
+  // Determinar el endpoint según el tipo de importación
+  const getEndpoint = () => {
+    if (importType === "zip") {
+      return `/admin/import/import/zip`;
+    }
+    return `/admin/import/${tab}`; // users o guests
+  };
+
   // Paso 1: Validar archivo (dry-run)
   async function handleValidation(e) {
     e.preventDefault();
     if (!file) {
-      setErr("Selecciona un archivo CSV/XLSX");
+      setErr("Selecciona un archivo CSV/XLSX/ZIP");
+      return;
+    }
+
+    // Validación: ZIP solo funciona con el endpoint /import
+    if (importType === "zip" && !file.name.toLowerCase().endsWith('.zip')) {
+      setErr("Debes seleccionar un archivo ZIP cuando el tipo de importación es 'ZIP con fotos'");
+      return;
+    }
+
+    if (importType === "csv" && file.name.toLowerCase().endsWith('.zip')) {
+      setErr("Debes seleccionar un archivo CSV/XLSX cuando el tipo de importación es 'CSV/XLSX'");
       return;
     }
 
@@ -34,21 +54,19 @@ export default function ImportDB() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const { data } = await api.post(
-        `/admin/import/${tab}?dryRun=true&conflictAction=${conflictAction}`,
-        formData
-      );
+      const endpoint = getEndpoint();
+      
+      // ✅ CORREGIDO: ZIP también hace dry-run primero
+      const url = `${endpoint}?dryRun=true&conflictAction=${conflictAction}`;
+      const { data } = await api.post(url, formData);
 
       setValidationResult(data);
-
-      // Si hay conflictos, mostrar opciones
       const summary = data.summary || data;
       const totalConflicts =
         (summary.conflicts?.excluded || 0) +
         (summary.conflicts?.deleted || 0) +
         (summary.conflicts?.overwritten || 0);
 
-      // ✅ CORREGIDO: Mostrar opciones si hay conflictos, sin importar si valid > 0
       if (totalConflicts > 0) {
         setShowConflictOptions(true);
       }
@@ -71,10 +89,10 @@ export default function ImportDB() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const { data } = await api.post(
-        `/admin/import/${tab}?dryRun=false&conflictAction=${selectedAction}`,
-        formData
-      );
+      const endpoint = getEndpoint();
+      const url = `${endpoint}?dryRun=false&conflictAction=${selectedAction}`;
+
+      const { data } = await api.post(url, formData);
 
       setImportResult(data);
       setValidationResult(null);
@@ -106,8 +124,28 @@ export default function ImportDB() {
     if (fileInput) fileInput.value = '';
   }
 
+  // Handler para cambio de tipo de importación
+  function handleImportTypeChange(newType) {
+    setImportType(newType);
+    setFile(null);
+    setValidationResult(null);
+    setImportResult(null);
+    setShowConflictOptions(false);
+    setErr("");
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) fileInput.value = '';
+  }
+
   const validationSummary = validationResult?.summary || validationResult;
   const importSummary = importResult;
+
+  // Determinar el accept del input según el tipo
+  const getFileAccept = () => {
+    if (importType === "zip") {
+      return ".zip,application/zip,application/x-zip-compressed";
+    }
+    return ".csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  };
 
   return (
     <div className="importdb container py-3">
@@ -134,24 +172,46 @@ export default function ImportDB() {
         <div className="card shadow-sm mb-3">
           <div className="card-body">
             <h5 className="card-title">Paso 1: Seleccionar archivo y validar</h5>
+            
+            {/* Selector de tipo de importación */}
+            <div className="mb-3">
+              <label htmlFor="importTypeSelect" className="form-label">
+                <strong>Tipo de importación:</strong>
+              </label>
+              <select
+                id="importTypeSelect"
+                className="form-select"
+                value={importType}
+                onChange={(e) => handleImportTypeChange(e.target.value)}
+              >
+                <option value="csv">📄 CSV/XLSX (solo datos)</option>
+                <option value="zip">📦 ZIP (CSV/XLSX + fotos)</option>
+              </select>
+              <div className="form-text">
+                {importType === "csv" 
+                  ? "Importa usuarios desde archivo CSV o XLSX sin fotos"
+                  : "Importa usuarios con sus fotos desde un archivo ZIP que contenga el CSV/XLSX y las imágenes"}
+              </div>
+            </div>
+
             <form onSubmit={handleValidation}>
               <div className="row g-3 align-items-end">
                 <div className="col-md-10">
                   <label htmlFor="fileInput" className="form-label">
-                    Archivo CSV/XLSX
+                    {importType === "zip" ? "Archivo ZIP" : "Archivo CSV/XLSX"}
                   </label>
                   <input
                     id="fileInput"
                     type="file"
                     className="form-control"
-                    accept=".csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    accept={getFileAccept()}
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                   />
                 </div>
 
                 <div className="col-md-2">
                   <button className="btn btn-primary w-100" disabled={loading || !file}>
-                    {loading ? "Validando..." : "Validar"}
+                    {loading ? "Procesando..." : "Validar"}
                   </button>
                 </div>
               </div>
@@ -163,6 +223,12 @@ export default function ImportDB() {
                   <strong>Columnas requeridas:</strong> boleta, firstName, lastNameP, lastNameM,
                   email, role (ADMIN|GUARD|USER), institutionalType (STUDENT|TEACHER|PAE), photoUrl
                   (opcional)
+                  {importType === "zip" && (
+                    <div className="mt-2">
+                      <strong>Estructura del ZIP:</strong> Debe contener un archivo CSV/XLSX con los datos
+                      y las fotos con nombre <code>boleta.jpg</code> o <code>boleta.png</code>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -371,11 +437,9 @@ export default function ImportDB() {
               <div className="alert alert-primary mt-4">
                 <h6 className="alert-heading">🚀 Paso 2: Confirmar importación</h6>
                 
-                {/* ✅ MENSAJE AJUSTADO según si hay válidos o no */}
                 {validationSummary?.valid > 0 ? (
                   <p className="mb-3">
-                    Se encontraron <strong>{validationSummary.valid}</strong> registros válidos para
-                    importar. ¿Cómo deseas manejar los duplicados?
+                    Todos los registros son duplicados. Elige cómo deseas manejarlos:
                   </p>
                 ) : (
                   <p className="mb-3">
@@ -508,13 +572,13 @@ export default function ImportDB() {
             <div className="row g-3 mb-3">
               <div className="col-md-4">
                 <div className="p-3 bg-success bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-success">{importSummary?.upserted || 0}</h3>
+                  <h3 className="mb-0 text-success">{importSummary?.upserted || importSummary?.data?.created || 0}</h3>
                   <small className="text-muted">Usuarios importados</small>
                 </div>
               </div>
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded text-center">
-                  <h3 className="mb-0">{importSummary?.total || 0}</h3>
+                  <h3 className="mb-0">{importSummary?.total || importSummary?.data?.total || 0}</h3>
                   <small className="text-muted">Total procesados</small>
                 </div>
               </div>
@@ -544,6 +608,13 @@ export default function ImportDB() {
                     <li>{importSummary.conflicts.deleted} usuarios eliminados y reemplazados</li>
                   )}
                 </ul>
+              </div>
+            )}
+
+            {/* Mensaje especial para importaciones ZIP */}
+            {importType === "zip" && importSummary?.photosProcessed !== undefined && (
+              <div className="alert alert-success">
+                📸 {importSummary.photosProcessed} fotos procesadas correctamente
               </div>
             )}
 

@@ -2,10 +2,18 @@
 import { api } from './api';
 
 /** Lista de usuarios (con filtros/paginación) */
-export function listUsers({ query = '', role = '', take = 20, skip = 0, includeInactive = false } = {}) {
+export function listUsers({ 
+  query = '', 
+  role = '', 
+  institutionalType = '', // ← NUEVO
+  take = 20, 
+  skip = 0, 
+  includeInactive = false 
+} = {}) {
   const params = { take, skip };
   if (query) params.query = query;
   if (role) params.role = role;
+  if (institutionalType) params.institutionalType = institutionalType; // ← NUEVO
   if (includeInactive) params.includeInactive = 'true';
   return api.get('/admin/users', { params });
 }
@@ -26,6 +34,11 @@ export function restoreUser(id) {
 }
 
 /** Eliminación definitiva (si no tiene relaciones) */
-export function deleteUser(id) {
-  return api.delete(`/admin/users/${id}`);
+export function deleteUser(id, mode = 'hard', options = {}) {
+  const params = new URLSearchParams();
+  if (mode) params.append('mode', mode);
+  if (mode === 'anonymize' && options.anonymizeEmail !== undefined) {
+    params.append('anonymizeEmail', options.anonymizeEmail ? 'true' : 'false');
+  }
+  return api.delete(`/admin/users/${id}?${params.toString()}`);
 }

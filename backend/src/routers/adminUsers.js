@@ -130,48 +130,120 @@ router.get('/users', auth, requireRole(['ADMIN']), async (req, res) => {
     const skip = parseInt(req.query.skip || '0', 10);
     const query = (req.query.query || '').trim();
     const role  = (req.query.role || '').trim().toUpperCase();
+    const institutionalType = (req.query.institutionalType || '').trim().toUpperCase(); // ← NUEVO
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
 
-    const where = {};
-    if (query) {
-      where.OR = [
-        { name:   { contains: query, mode: 'insensitive' } },
-        { email:  { contains: query, mode: 'insensitive' } },
-        { boleta: { contains: query } }
-      ];
-    }
+    // Construir filtro base
+    const baseWhere = {};
     if (role && ['ADMIN', 'USER', 'GUARD'].includes(role)) {
-      where.role = role;
+      baseWhere.role = role;
     }
     if (!includeInactive) {
-      where.isActive = true;
+      baseWhere.isActive = true;
+    }
+    
+    // ← NUEVO: Filtro por sub-rol institucional
+    if (institutionalType && ['STUDENT', 'TEACHER', 'PAE'].includes(institutionalType)) {
+      baseWhere.institutionalType = institutionalType;
     }
 
-    const [itemsRaw, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        take,
-        skip,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          boleta: true,
-          firstName: true,
-          lastNameP: true,
-          lastNameM: true,
-          name: true,
-          email: true,
-          role: true,
-          isActive: true,
-          mustChangePassword: true,      // 👈 nuevo
-          institutionalType: true,       // opcional, por si lo usas en la tabla
-          createdAt: true,
-        }
-      }),
-      prisma.user.count({ where })
-    ]);
+    let itemsRaw = [];
+    let totalFiltered = 0;
 
-    // Mapeamos para agregar defaultPassword solo si mustChangePassword = true
+    if (query) {
+      const trimmed = query.trim();
+      
+      // Si son exactamente 10 dígitos, buscar boleta exacta
+      if (/^\d{10}$/.test(trimmed)) {
+        const where = { ...baseWhere, boleta: trimmed };
+        
+        [itemsRaw, totalFiltered] = await Promise.all([
+          prisma.user.findMany({
+            where,
+            take,
+            skip,
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true, boleta: true, firstName: true, lastNameP: true, lastNameM: true,
+              name: true, email: true, role: true, isActive: true, mustChangePassword: true,
+              institutionalType: true, createdAt: true,
+            }
+          }),
+          prisma.user.count({ where })
+        ]);
+      }
+      // Si parece un email completo (contiene @ y dominio ipn.mx), búsqueda exacta
+      else if (/@.*ipn\.mx$/i.test(trimmed)) {
+        const where = { 
+          ...baseWhere, 
+          email: { equals: trimmed.toLowerCase(), mode: 'insensitive' }
+        };
+        
+        [itemsRaw, totalFiltered] = await Promise.all([
+          prisma.user.findMany({
+            where,
+            take,
+            skip,
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true, boleta: true, firstName: true, lastNameP: true, lastNameM: true,
+              name: true, email: true, role: true, isActive: true, mustChangePassword: true,
+              institutionalType: true, createdAt: true,
+            }
+          }),
+          prisma.user.count({ where })
+        ]);
+      }
+      // Para nombres: traer todos y filtrar en memoria (normalización de acentos)
+      else {
+        // Traer TODOS los usuarios que coincidan con el filtro base
+        const allUsers = await prisma.user.findMany({
+          where: baseWhere,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true, boleta: true, firstName: true, lastNameP: true, lastNameM: true,
+            name: true, email: true, role: true, isActive: true, mustChangePassword: true,
+            institutionalType: true, createdAt: true,
+          }
+        });
+
+        // Normalizar término de búsqueda
+        const normalized = stripAccents(trimmed).toLowerCase();
+        
+        // Filtrar en memoria con normalización de acentos
+        const filtered = allUsers.filter(u => {
+          const nameNormalized = stripAccents(u.name || '').toLowerCase();
+          const emailNormalized = (u.email || '').toLowerCase();
+          const boletaNormalized = (u.boleta || '');
+          
+          return nameNormalized.includes(normalized) || 
+                 emailNormalized.includes(normalized) ||
+                 boletaNormalized.includes(trimmed);
+        });
+
+        // Aplicar paginación manual
+        totalFiltered = filtered.length;
+        itemsRaw = filtered.slice(skip, skip + take);
+      }
+    } else {
+      // Sin búsqueda, traer todos según filtros base
+      [itemsRaw, totalFiltered] = await Promise.all([
+        prisma.user.findMany({
+          where: baseWhere,
+          take,
+          skip,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true, boleta: true, firstName: true, lastNameP: true, lastNameM: true,
+            name: true, email: true, role: true, isActive: true, mustChangePassword: true,
+            institutionalType: true, createdAt: true,
+          }
+        }),
+        prisma.user.count({ where: baseWhere })
+      ]);
+    }
+
+    // Mapear para agregar defaultPassword
     const items = itemsRaw.map((u) => {
       let defaultPassword = null;
       if (u.mustChangePassword && u.role === 'USER') {
@@ -184,11 +256,11 @@ router.get('/users', auth, requireRole(['ADMIN']), async (req, res) => {
 
       return {
         ...u,
-        defaultPassword,  // 👈 solo visible al ADMIN en la API
+        defaultPassword,
       };
     });
 
-    res.json({ items, total });
+    res.json({ items, total: totalFiltered });
   } catch (e) {
     console.error('ADMIN LIST USERS ERROR:', e);
     res.status(500).json({ error: 'No se pudo obtener la lista' });
@@ -279,37 +351,79 @@ router.patch('/users/:id/restore', auth, requireRole(['ADMIN']), async (req, res
   }
 });
 
-/** DELETE /api/admin/users/:id (solo ADMIN) */
+/** DELETE /api/admin/users/:id (solo ADMIN)
+ * Query: mode=soft|anonymize|hard
+ *        anonymizeEmail=true (opcional para reemplazar email)
+ */
 router.delete('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
+  const idNum = Number(req.params.id);
+  if (!Number.isInteger(idNum) || idNum <= 0) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+  const { mode = 'soft' } = req.query;
+  const anonymizeEmail = String(req.query.anonymizeEmail || 'true').toLowerCase() === 'true';
 
-    const target = await prisma.user.findUnique({ where: { id } });
+  try {
+    const target = await prisma.user.findUnique({ where: { id: idNum } });
     if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    if (target.role === 'ADMIN' && target.isActive) {
+    // Evita eliminarse a sí mismo
+    if (target.id === req.user.id && mode !== 'soft') {
+      return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
+    }
+
+    // Proteger último ADMIN activo (para soft/anonymize/hard)
+    if (target.role === 'ADMIN') {
       const adminsActivos = await prisma.user.count({
-        where: { role: 'ADMIN', isActive: true }
+        where: { role: 'ADMIN', isActive: true, enabled: true, id: { not: target.id } }
       });
-      if (adminsActivos <= 1) {
+      if (adminsActivos === 0) {
         return res.status(400).json({ error: 'No puedes eliminar al último ADMIN activo' });
       }
     }
 
-    if (target.id === req.user.id) {
-      return res.status(400).json({ error: 'No puedes eliminarte a ti mismo' });
+    if (mode === 'soft') {
+      const updated = await prisma.user.update({
+        where: { id: idNum },
+        data: { enabled: false, isActive: false }
+      });
+      return res.json({ message: 'Usuario deshabilitado (soft delete)', userId: updated.id });
     }
 
-    await prisma.user.delete({ where: { id } });
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('ADMIN DELETE USER ERROR:', e);
-    res.status(400).json({ error: 'No se pudo eliminar. Si tiene QR o logs, realiza baja lógica.' });
-  }
-});
+    if (mode === 'anonymize') {
+      const anonymizedEmail = anonymizeEmail
+        ? `deleted_${target.id}_${Date.now()}@example.invalid`
+        : target.email;
+      const updated = await prisma.user.update({
+        where: { id: idNum },
+        data: {
+          name: '[ELIMINADO]',
+            firstName: null,
+            lastNameP: null,
+            lastNameM: null,
+            email: anonymizedEmail,
+            boleta: null,
+            photoUrl: null,
+            enabled: false,
+            isActive: false
+        }
+      });
+      return res.json({ message: 'Usuario anonimizado', userId: updated.id });
+    }
+
+    if (mode === 'hard') {
+      await prisma.user.delete({ where: { id: idNum } });
+      return res.json({
+        message: 'Usuario eliminado (hard delete). Logs quedan con userId NULL.',
+        userId: idNum
+      });
+    }
+
+    return res.status(400).json({ error: 'mode inválido (soft|anonymize|hard)' });
+   } catch (err) {
+     return res.status(400).json({ error: 'No se pudo procesar', detail: err.message });
+   }
+ });
 
 /**
  * GET /api/admin/report

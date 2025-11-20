@@ -74,6 +74,16 @@ export default function AccessReport() {
               .filter(Boolean)
               .join(' ') || row.user?.name || '—';
 
+        // ← TRADUCCIÓN DE ACCIÓN con ISSUE → "Código generado"
+        let accion = row.action;
+        if (accion === 'VALIDATE_ALLOW') {
+          accion = 'Permitido';
+        } else if (accion === 'VALIDATE_DENY') {
+          accion = 'Denegado';
+        } else if (accion === 'ISSUE') {
+          accion = 'Código generado';
+        }
+
         return {
           id: row.id,
           createdAt: row.createdAt,
@@ -83,12 +93,7 @@ export default function AccessReport() {
               : row.qr?.kind === 'EXIT'
               ? 'Salida'
               : '—',
-          accion:
-            row.action === 'VALIDATE_ALLOW'
-              ? 'Permitido'
-              : row.action === 'VALIDATE_DENY'
-              ? 'Denegado'
-              : row.action,
+          accion,
           fullName,
           rol: isGuest ? 'Invitado' : row.user?.role || '—',
           boleta: row.user?.boleta || '—',
@@ -162,7 +167,7 @@ export default function AccessReport() {
     URL.revokeObjectURL(url);
   };
 
-  /* ------------ Exportar “PDF” via print() ------------ */
+  /* ------------ Exportar "PDF" via print() ------------ */
   const exportPDF = () => {
     if (!prettyRows.length) {
       alert('No hay datos para exportar');
