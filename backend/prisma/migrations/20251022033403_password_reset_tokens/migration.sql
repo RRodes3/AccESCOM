@@ -1,8 +1,8 @@
 -- DropIndex
-DROP INDEX `QRPass_code_idx` ON `qrpass`;
+DROP INDEX `QRPass_code_idx` ON `QRPass`;
 
 -- AlterTable
-ALTER TABLE `qrpass` ALTER COLUMN `kind` DROP DEFAULT;
+ALTER TABLE `QRPass` ALTER COLUMN `kind` DROP DEFAULT;
 
 -- CreateTable
 CREATE TABLE `PasswordReset` (

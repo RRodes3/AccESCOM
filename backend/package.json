@@ -5,8 +5,10 @@
     "scripts": {
         "dev": "nodemon server.js",
         "start": "node server.js",
+        "build": "prisma generate && prisma migrate deploy",
+        "migrate:dev": "prisma migrate dev",
+        "migrate:deploy": "prisma migrate deploy",
         "db:seed": "node prisma/seed.js",
-        "db:migrate": "prisma migrate dev --name init",
         "db:studio": "prisma studio",
         "test": "echo \"Error: no test specified\" && exit 1"
     },

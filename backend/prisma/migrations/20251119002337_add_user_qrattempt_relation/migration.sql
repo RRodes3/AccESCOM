@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `user` ADD COLUMN `failedAttempts` INTEGER NOT NULL DEFAULT 0,
+ALTER TABLE `User` ADD COLUMN `failedAttempts` INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN `lastFailedAttempt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3);
 
 -- CreateTable
@@ -9,7 +9,6 @@ CREATE TABLE `QRAttempt` (
     `attemptedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `status` VARCHAR(191) NOT NULL,
     `reason` VARCHAR(191) NOT NULL,
-
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

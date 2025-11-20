@@ -1,14 +1,12 @@
 /*
   Warnings:
-
-  - You are about to alter the column `ip` on the `passwordreset` table. The data in that column could be lost. The data in that column will be cast from `VarChar(191)` to `VarChar(100)`.
-
+  - You are about to alter the column `ip` on the `PasswordReset` table. Data could be truncated.
 */
 -- DropIndex
-DROP INDEX `PasswordReset_token_idx` ON `passwordreset`;
+DROP INDEX `PasswordReset_token_idx` ON `PasswordReset`;
 
 -- AlterTable
-ALTER TABLE `passwordreset` MODIFY `ip` VARCHAR(100) NULL,
+ALTER TABLE `PasswordReset` MODIFY `ip` VARCHAR(100) NULL,
     MODIFY `userAgent` VARCHAR(300) NULL;
 
 -- CreateIndex

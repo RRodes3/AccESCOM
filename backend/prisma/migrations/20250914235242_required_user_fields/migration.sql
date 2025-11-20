@@ -9,10 +9,10 @@
 
 */
 -- DropIndex
-DROP INDEX `User_email_idx` ON `user`;
+DROP INDEX `User_email_idx` ON `User`;
 
 -- AlterTable
-ALTER TABLE `user` ADD COLUMN `boleta` VARCHAR(191) NOT NULL,
+ALTER TABLE `User` ADD COLUMN `boleta` VARCHAR(191) NOT NULL,
     ADD COLUMN `firstName` VARCHAR(191) NOT NULL,
     ADD COLUMN `lastNameM` VARCHAR(191) NOT NULL,
     ADD COLUMN `lastNameP` VARCHAR(191) NOT NULL;
