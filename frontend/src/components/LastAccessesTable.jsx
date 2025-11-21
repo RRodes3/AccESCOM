@@ -1,5 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { getLastAccesses } from '../services/api';
+import { getLastAccesses, api } from '../services/api';
+
+/* ---------- Configuración de URLs para fotos ---------- */
+// Igual que en GuardScan
+const API_BASE_URL = api?.defaults?.baseURL || '/api';
+const ASSETS_BASE_URL =
+  process.env.REACT_APP_ASSETS_BASE_URL ||
+  API_BASE_URL.replace(/\/api\/?$/, '');
+
+function resolvePhotoUrl(photoUrl) {
+  if (!photoUrl) return null;
+
+  // Si ya viene absoluta, la dejamos
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+    return photoUrl;
+  }
+
+  // Si es relativa (ej. "/photos/xyz.jpg"), la pegamos al backend
+  const base = ASSETS_BASE_URL.replace(/\/$/, '');
+  const path = photoUrl.replace(/^\//, '');
+  return `${base}/${path}`;
+}
 
 export default function LastAccessesTable() {
   const [accesses, setAccesses] = useState([]);
@@ -19,11 +40,11 @@ export default function LastAccessesTable() {
     try {
       const res = await getLastAccesses({ take, skip });
 
-      // ⚠️ Backend actual devuelve: { items, total }
+      // Backend: { items, total }
       const data = res.data || {};
       const items = data.items || [];
 
-      // Mapeamos AccessEvent -> shape que la tabla espera
+      // Mapear AccessEvent -> shape que la tabla espera
       const mappedAccesses = items.map((ev) => {
         const user = ev.user || null;
         const guest = ev.guest || null;
@@ -44,7 +65,6 @@ export default function LastAccessesTable() {
         return {
           id: ev.id,
           createdAt: ev.createdAt,
-          // Lo que la tabla usa:
           user: user
             ? {
                 name: userFullName || user.email || 'Desconocido',
@@ -59,11 +79,9 @@ export default function LastAccessesTable() {
                 reason: guest.reason || '',
               }
             : null,
-          // La tabla espera access.qr.kind
           qr: {
             kind: ev.accessType, // ENTRY / EXIT
           },
-          // Y access.action para pintar el badge
           action: ev.result, // ALLOWED / DENIED / INVALID_QR / EXPIRED_QR...
         };
       });
@@ -101,7 +119,7 @@ export default function LastAccessesTable() {
 
   const handlePageSizeChange = (e) => {
     const newTake = parseInt(e.target.value, 10);
-    fetchAccesses(newTake, 0); // reset a página 1
+    fetchAccesses(newTake, 0);
   };
 
   if (loading && accesses.length === 0) {
@@ -159,6 +177,10 @@ export default function LastAccessesTable() {
                   const action = access.action || '-';
                   const isGuest = !!access.guest;
 
+                  const userPhotoSrc = access.user?.photoUrl
+                    ? resolvePhotoUrl(access.user.photoUrl)
+                    : null;
+
                   return (
                     <tr key={access.id}>
                       <td>
@@ -167,12 +189,23 @@ export default function LastAccessesTable() {
                           : '—'}
                       </td>
                       <td>
-                        {access.user?.photoUrl && (
+                        {userPhotoSrc && (
                           <img
-                            src={access.user.photoUrl}
+                            src={userPhotoSrc}
                             alt=""
                             className="rounded-circle me-2"
-                            style={{ width: 32, height: 32, objectFit: 'cover' }}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              objectFit: 'cover',
+                            }}
+                            onError={(e) => {
+                              console.error(
+                                'Error cargando foto en tabla:',
+                                userPhotoSrc
+                              );
+                              e.target.style.display = 'none';
+                            }}
                           />
                         )}
                         {userName}
@@ -181,12 +214,17 @@ export default function LastAccessesTable() {
                               <span className="text-muted"> ({guestCurp})</span>
                             )
                           : userBoleta && (
-                              <span className="text-muted"> ({userBoleta})</span>
+                              <span className="text-muted">
+                                {' '}
+                                ({userBoleta})
+                              </span>
                             )}
                       </td>
                       <td className="col-motivo">
                         {isGuest ? (
-                          guestReason || <span className="text-muted">—</span>
+                          guestReason || (
+                            <span className="text-muted">—</span>
+                          )
                         ) : (
                           <span className="text-muted">—</span>
                         )}
@@ -228,7 +266,6 @@ export default function LastAccessesTable() {
           </table>
         </div>
 
-        {/* Controles de paginación */}
         {pagination.totalPages > 1 && (
           <nav className="d-flex justify-content-between align-items-center mt-3">
             <div className="text-muted small">
