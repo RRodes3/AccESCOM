@@ -9,10 +9,10 @@ const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // Función que server.js necesita
 function initEmailProvider() {
-  if (resend) {
-    console.log("✅ Proveedor de correo inicializado (Resend)");
+  if (!resendApiKey) {
+    console.warn('⚠️ RESEND_API_KEY no definida; los correos NO se enviarán.');
   } else {
-    console.warn("⚠️ Resend API KEY no configurada — correos deshabilitados.");
+    console.log('✅ Resend API key detectada');
   }
 }
 
@@ -46,7 +46,7 @@ function normalizeEmail(raw) {
 }
 
 // -------------------------------------------------------
-// Plantilla RESET (tal cual la tuya)
+// Plantilla RESET
 // -------------------------------------------------------
 function resetEmailHtml({ name = "usuario", resetUrl }) {
   const preheader = `Restablece tu contraseña. El enlace expira en 30 minutos.`;
@@ -116,7 +116,7 @@ function resetEmailHtml({ name = "usuario", resetUrl }) {
 }
 
 // -------------------------------------------------------
-// Plantilla ACCESO (tal cual la tuya)
+// Plantilla ACCESO
 // -------------------------------------------------------
 function accessNotificationHtml({
   name = "usuario",
@@ -138,9 +138,50 @@ function accessNotificationHtml({
   });
 
   return `
-    <!-- Tu HTML completo aquí -->
-    ${/* (no lo reduzco; el tuyo funciona perfecto, mantenido tal cual) */ ""}
-    ${/* Ya lo tenías correcto arriba */ ""}
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>Notificación de acceso</title>
+      </head>
+      <body style="margin:0;background:#f6f6f6;font-family:Arial,Helvetica,sans-serif;color:#222;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f6f6;padding:24px 0;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden;">
+                <tr>
+                  <td style="background:#800040;color:#fff;padding:20px 24px;font-weight:bold;font-size:18px;">
+                    ${emoji} AccESCOM - ${accionCapital}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:24px;">
+                    <h1 style="margin:0 0 8px 0;font-size:20px;color:#111;">Hola, ${name}</h1>
+                    <p style="margin:0 0 12px 0;line-height:1.5;">
+                      Se registró tu <strong>${accion}</strong> en <strong>${locationName}</strong>.
+                    </p>
+                    <p style="margin:0 0 12px 0;line-height:1.5;">
+                      <strong>Fecha y hora:</strong> ${formattedDate}
+                    </p>
+                    ${
+                      reason
+                        ? `<p style="margin:0 0 12px 0;line-height:1.5;"><strong>Motivo:</strong> ${reason}</p>`
+                        : ""
+                    }
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f1f1f3;padding:16px 24px;color:#666;font-size:12px;">
+                    © ${new Date().getFullYear()} AccESCOM · IPN · ESCOM
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
   `;
 }
 
@@ -160,8 +201,14 @@ async function sendPasswordResetEmail({ to, name, resetUrl }) {
   }
 
   const html = resetEmailHtml({ name, resetUrl });
-  const text = `Hola ${name}...
+  const text = `Hola ${name},
+
+Recibimos una solicitud para restablecer tu contraseña de AccESCOM.
+Haz clic en el siguiente enlace para continuar (válido por 30 minutos):
+
 ${resetUrl}
+
+Si no solicitaste este cambio, puedes ignorar este mensaje.
 `;
 
   const from = process.env.EMAIL_FROM || "AccESCOM <onboarding@resend.dev>";

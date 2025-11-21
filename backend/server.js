@@ -45,17 +45,16 @@ app.get('/', (_req, res) =>
 const { initEmailProvider } = require('./src/utils/mailer');
 const { setupDailyResetJobs } = require('./src/jobs/dailyReset');
 
-// Inicializa proveedor de correo (Resend)
-initEmailProvider()
-  .then(() => {
-    console.log('✅ Proveedor de correo inicializado (Resend)');
-  })
-  .catch((err) => {
-    console.error(
-      '⚠️ No se pudo inicializar el proveedor de correo:',
-      err?.message || err
-    );
-  });
+// Inicializa proveedor de correo (Resend) - SIN .then
+try {
+  initEmailProvider();
+  console.log('✅ Proveedor de correo inicializado (Resend)');
+} catch (err) {
+  console.error(
+    '⚠️ No se pudo inicializar el proveedor de correo:',
+    err?.message || err
+  );
+}
 
 // Inicia jobs diarios (reset INSIDE → OUTSIDE a las 23:00 CDMX)
 setupDailyResetJobs({
