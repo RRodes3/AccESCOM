@@ -57,7 +57,8 @@ model User {
   firstName         String?
   lastNameP         String?
   lastNameM         String?
-  email             String             @unique
+  email             String             @unique  // Correo institucional (login)
+  contactEmail       String?                // Correo de contacto (Notificaciones y Recuperación de contraseña)
   password          String
   role              String // ADMIN | GUARD | USER
   institutionalType InstitutionalType? //Solo aplica cuando role = USER
