@@ -3,6 +3,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import LastAccessesTable from '../components/LastAccessesTable';
+import '../components/Common.css';
 
 /* ---------- Configuración de URLs ---------- */
 // Obtener la base del backend desde la configuración de API
@@ -500,6 +501,16 @@ export default function GuardScan() {
       )}
 
       {msg && <div className="alert alert-warning mt-3">{msg}</div>}
+
+      {/* Mensaje de soporte */}
+      <div className="soporte-box">
+        <p className="soporte-texto">
+          ¿Algún problema con el lector o el acceso?{" "}
+          <a href="mailto:AccESCOM.app@gmail.com" className="soporte-link">
+            Contáctanos aquí
+          </a>.
+        </p>
+      </div>
 
       <LastAccessesTable />
     </div>
