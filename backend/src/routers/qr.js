@@ -221,7 +221,7 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/qr/my-active?kind=ENTRY&autocreate=1
+// GET /api/qr/my-active
 // ─────────────────────────────────────────────────────────────
 router.get(
   '/my-active',
@@ -241,14 +241,14 @@ router.get(
       const accessState = u?.accessState || 'OUTSIDE';
 
       if (accessState === 'INSIDE' && kind === 'ENTRY') {
-        return res.status(409).json({
-          error: 'Tu QR de entrada está deshabilitado. Debes salir primero.',
-        });
+        return res
+          .status(409)
+          .json({ error: 'Tu QR de entrada está deshabilitado. Debes salir primero.' });
       }
       if (accessState === 'OUTSIDE' && kind === 'EXIT') {
-        return res.status(409).json({
-          error: 'Tu QR de salida está deshabilitado. Debes entrar primero.',
-        });
+        return res
+          .status(409)
+          .json({ error: 'Tu QR de salida está deshabilitado. Debes entrar primero.' });
       }
 
       const autocreate = String(req.query?.autocreate || '') === '1';
@@ -285,13 +285,7 @@ router.get(
 
         const code = crypto.randomBytes(16).toString('hex');
         pass = await prisma.qRPass.create({
-          data: {
-            code,
-            userId: req.user.id,
-            kind,
-            expiresAt,
-            status: 'ACTIVE',
-          },
+          data: { code, userId: req.user.id, kind, expiresAt, status: 'ACTIVE' },
           select: {
             id: true,
             code: true,
@@ -415,8 +409,12 @@ router.post(
         // Opcional: correo en fallos de estado
         if (pass.user && pass.user.role === 'USER' && pass.user.institutionalType && pass.user.email) {
           sendAccessNotificationEmail({
-            to: pass.user.email,
-            name: pass.user.name || [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM].filter(Boolean).join(' '),
+            to: [pass.user.email, pass.user.contactEmail].filter(Boolean).join(','),
+            name:
+              pass.user.name ||
+              [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM]
+                .filter(Boolean)
+                .join(' '),
             type: accessType,
             date: new Date(),
             locationName: 'ESCOM',
@@ -444,8 +442,12 @@ router.post(
         recordAttempt(pass, 'EXPIRED', reason);
         if (pass.user && pass.user.role === 'USER' && pass.user.institutionalType && pass.user.email) {
           sendAccessNotificationEmail({
-            to: pass.user.email,
-            name: pass.user.name || [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM].filter(Boolean).join(' '),
+            to: [pass.user.email, pass.user.contactEmail].filter(Boolean).join(','),
+            name:
+              pass.user.name ||
+              [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM]
+                .filter(Boolean)
+                .join(' '),
             type: accessType,
             date: new Date(),
             locationName: 'ESCOM',
@@ -475,10 +477,12 @@ router.post(
             guardId: req.user.id,
           });
           recordAttempt(pass, 'STATE_DENY', reason);
-          if (u.role === 'USER' && u.institutionalType && u.email) {
+            if (u.role === 'USER' && u.institutionalType && u.email) {
             sendAccessNotificationEmail({
               to: [u.email, u.contactEmail].filter(Boolean).join(','),
-              name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
+              name:
+                u.name ||
+                [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
               type: accessType,
               date: new Date(),
               locationName: 'ESCOM',
@@ -507,7 +511,9 @@ router.post(
           if (u.role === 'USER' && u.institutionalType && u.email) {
             sendAccessNotificationEmail({
               to: [u.email, u.contactEmail].filter(Boolean).join(','),
-              name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
+              name:
+                u.name ||
+                [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
               type: accessType,
               date: new Date(),
               locationName: 'ESCOM',
@@ -528,7 +534,6 @@ router.post(
           where: { id: u.id },
           data: { accessState: newState },
         });
-
         await createAccessLog({
           kind: pass.kind,
           action: 'VALIDATE_ALLOW',
@@ -542,27 +547,15 @@ router.post(
           user: { ...u, accessState: newState },
         });
 
-        // 📧 Enviar correo solo a usuarios institucionales con correo y tipo institucional definido
-        const isInstitutionalUser =
-          u.role === 'USER' && !!u.institutionalType && !!u.email;
+        // Registrar intento exitoso antes de responder
+        recordAttempt(
+          pass,
+          'SUCCESS',
+          pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido'
+        );
 
-        if (isInstitutionalUser) {
-          try {
-            await sendAccessNotificationEmail({
-              to: u.email,
-              name: ownerAllowed?.name || u.name,
-              type: accessType,
-              date: new Date(),
-              locationName: 'ESCOM',
-            }).catch(err => console.error('Email acceso async:', err));
-          } catch (mailErr) {
-            console.error('Error enviando correo de acceso (validate):', mailErr);
-          }
-        }
-        // Registrar éxito
-        recordAttempt(pass, 'SUCCESS', pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido');
-
-        return res.json({
+        // Responder de inmediato
+        res.json({
           ok: true,
           result: 'ALLOWED',
           reason: pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido',
@@ -570,6 +563,22 @@ router.post(
           owner: ownerAllowed,
           pass: { kind: pass.kind, status: pass.status },
         });
+
+        // Fire & forget correo
+        if (u.role === 'USER' && u.institutionalType && u.email) {
+          setImmediate(() => {
+            sendAccessNotificationEmail({
+              to: [u.email, u.contactEmail].filter(Boolean).join(','),
+              name: ownerAllowed?.name || u.name,
+              type: accessType,
+              date: new Date(),
+              locationName: 'ESCOM',
+            }).catch(err =>
+              console.error('Email acceso async (validate):', err)
+            );
+          });
+        }
+        return;
       }
 
       // 4) Invitado
@@ -646,7 +655,7 @@ router.post(
         });
       }
 
-      // 5) Caso raro: pass sin user ni guest
+      // 5) Caso raro
       const reason = 'QR inválido';
       await createAccessLog({
         kind: pass.kind,
@@ -654,7 +663,6 @@ router.post(
         qrId: pass.id,
         guardId: req.user.id,
       });
-
       return res.status(400).json({
         ok: false,
         result: 'INVALID_QR',
@@ -684,13 +692,10 @@ router.post(
   requireRole(['USER', 'ADMIN']),
   async (req, res) => {
     try {
-      const ttlMin = Math.max(
-        1,
-        Number(process.env.QR_TTL_MINUTES || 10080)
-      );
+      const ttlMin = Math.max(1, Number(process.env.QR_TTL_MINUTES || 10080));
       const fixedExpiresAt = computeExpiresAtWithSundayCap(ttlMin);
 
-      const result = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async tx => {
         const [entryActive, exitActive] = await Promise.all([
           tx.qRPass.findFirst({
             where: {
@@ -715,7 +720,7 @@ router.post(
         let entry = entryActive;
         let exit = exitActive;
 
-        const createWithFixed = (kind) =>
+        const createWithFixed = kind =>
           tx.qRPass.create({
             data: {
               code: crypto.randomBytes(16).toString('hex'),
@@ -778,7 +783,7 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────
-// C) GET /api/qr/logs (ADMIN)
+// GET /api/qr/logs (ADMIN)
 // ─────────────────────────────────────────────────────────────
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
@@ -826,7 +831,7 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// D) GET /api/qr/stats  (ADMIN)
+// GET /api/qr/stats  (ADMIN)
 // ─────────────────────────────────────────────────────────────
 router.get('/stats', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
@@ -845,7 +850,7 @@ router.get('/stats', auth, requireRole(['ADMIN']), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Solo pruebas: resetear estado del usuario
+// POST /api/qr/reset-state (pruebas)
 // ─────────────────────────────────────────────────────────────
 router.post('/reset-state', auth, async (req, res) => {
   try {
@@ -862,7 +867,6 @@ router.post('/reset-state', auth, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/qr/scan  (GUARD / ADMIN)
-// (usa accessEvent, no toca accessLog)
 // ─────────────────────────────────────────────────────────────
 router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   const { code } = req.body || {};
@@ -949,15 +953,12 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       },
     });
 
-    // 👇 NUEVO: si es invitado y el escaneo fue permitido, marcar USED + actualizar estado
+    // Invitado: marcar usado y actualizar estado
     if (pass && pass.guestId && result === 'ALLOWED') {
-      // Marcar el QR como usado
       await prisma.qRPass.update({
         where: { id: pass.id },
         data: { status: 'USED' },
       });
-
-      // Actualizar estado del invitado
       if (pass.guest) {
         const newState = pass.kind === 'ENTRY' ? 'INSIDE' : 'COMPLETED';
         await prisma.guestVisit.update({
@@ -967,31 +968,7 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       }
     }
 
-    // 📧 Enviar correo si es usuario institucional y el QR fue permitido
-    if (
-      result === 'ALLOWED' &&
-      pass?.user &&
-      pass.user.role === 'USER' &&
-      pass.user.institutionalType &&
-      pass.user.email
-    ) {
-      try {
-        await sendAccessNotificationEmail({
-          to: pass.user.email,
-          name: pass.user.name || [
-            pass.user.firstName,
-            pass.user.lastNameP,
-            pass.user.lastNameM,
-          ].filter(Boolean).join(' '),
-          type: accessType,
-          date: new Date(),
-          locationName: 'ESCOM',
-        }).catch(err => console.error('Email acceso async:', err));
-      } catch (mailErr) {
-        console.error('Error enviando correo de acceso (scan):', mailErr);
-      }
-    }
-
+    // Responder inmediatamente
     let owner = null;
     if (pass?.user) {
       owner = {
@@ -1008,11 +985,9 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
         role: 'GUEST',
         kind: 'GUEST',
         id: pass.guest.id,
-        name: [
-          pass.guest.firstName,
-          pass.guest.lastNameP,
-          pass.guest.lastNameM,
-        ].filter(Boolean).join(' '),
+        name: [pass.guest.firstName, pass.guest.lastNameP, pass.guest.lastNameM]
+          .filter(Boolean)
+          .join(' '),
         firstName: pass.guest.firstName,
         lastNameP: pass.guest.lastNameP,
         lastNameM: pass.guest.lastNameM,
@@ -1021,7 +996,7 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       };
     }
 
-    return res.json({
+    res.json({
       ok: result === 'ALLOWED',
       result,
       reason,
@@ -1029,16 +1004,39 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
       expiresAt,
       owner,
     });
+
+    // Fire & forget correo solo si permitido e institucional
+    if (
+      result === 'ALLOWED' &&
+      pass?.user &&
+      pass.user.role === 'USER' &&
+      pass.user.institutionalType &&
+      pass.user.email
+    ) {
+      setImmediate(() => {
+        sendAccessNotificationEmail({
+          to: [pass.user.email, pass.user.contactEmail].filter(Boolean).join(','),
+          name:
+            pass.user.name ||
+            [pass.user.firstName, pass.user.lastNameP, pass.user.lastNameM]
+              .filter(Boolean)
+              .join(' '),
+          type: accessType,
+          date: new Date(),
+          locationName: 'ESCOM',
+        }).catch(err =>
+          console.error('Email acceso async (scan):', err)
+        );
+      });
+    }
   } catch (e) {
     console.error('QR/scan error:', e);
-    return res
-      .status(500)
-      .json({ ok: false, error: 'No se pudo validar el QR' });
+    return res.status(500).json({ ok: false, error: 'No se pudo validar el QR' });
   }
 });
 
 // ─────────────────────────────────────────────────────────────
-// E) GET /api/qr/last-accesses?take=10&skip=0 (GUARD/ADMIN)
+// GET /api/qr/last-accesses (GUARD/ADMIN)
 // ─────────────────────────────────────────────────────────────
 router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   try {
@@ -1047,11 +1045,7 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
 
     const [accesses, total] = await Promise.all([
       prisma.accessLog.findMany({
-        where: {
-          action: {
-            not: 'ISSUE'
-          }
-        },
+        where: { action: { not: 'ISSUE' } },
         take,
         skip,
         orderBy: { createdAt: 'desc' },
@@ -1064,7 +1058,7 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
               lastNameM: true,
               boleta: true,
               photoUrl: true,
-            }
+            },
           },
           guest: {
             select: {
@@ -1072,29 +1066,25 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
               lastNameP: true,
               lastNameM: true,
               curp: true,
-              reason: true
-            }
+              reason: true,
+            },
           },
-          qr: {
-            select: { kind: true, status: true }
-          },
+          qr: { select: { kind: true, status: true } },
         },
       }),
-      prisma.accessLog.count({
-        where: {
-          action: {
-            not: 'ISSUE'
-          }
-        }
-      }),
+      prisma.accessLog.count({ where: { action: { not: 'ISSUE' } } }),
     ]);
 
     const normalized = accesses.map(a => ({
       ...a,
-      guest: a.guest ? {
-        ...a.guest,
-        name: [a.guest.firstName, a.guest.lastNameP, a.guest.lastNameM].filter(Boolean).join(' '),
-      } : null
+      guest: a.guest
+        ? {
+            ...a.guest,
+            name: [a.guest.firstName, a.guest.lastNameP, a.guest.lastNameM]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : null,
     }));
 
     res.json({
@@ -1105,7 +1095,7 @@ router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, 
         skip,
         totalPages: Math.ceil(total / take),
         currentPage: Math.floor(skip / take) + 1,
-      }
+      },
     });
   } catch (e) {
     console.error('Error fetching last accesses:', e);
