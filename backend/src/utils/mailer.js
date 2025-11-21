@@ -1,10 +1,29 @@
 // backend/src/utils/mailer.js
 
-// ❌ Ya no necesitamos nodemailer aquí
-// const nodemailer = require('nodemailer');
-
 // ✅ Usamos nuestro wrapper de Resend
 const { sendEmail } = require('./mailer.resend');
+
+/**
+ * Inicializa el proveedor de correo (Resend).
+ * Valida que la API key esté configurada.
+ */
+async function initEmailProvider() {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error(
+      'RESEND_API_KEY no está configurada en las variables de entorno'
+    );
+  }
+
+  // Opcionalmente, puedes hacer una prueba de envío o verificación aquí
+  // Por ejemplo, consultar dominios verificados:
+  // const { Resend } = require('resend');
+  // const resend = new Resend(process.env.RESEND_API_KEY);
+  // const domains = await resend.domains.list();
+  // if (!domains?.data?.length) throw new Error('No hay dominios verificados');
+
+  console.log('✅ Resend API key detectada');
+  return true;
+}
 
 /** Plantilla HTML (IPN guinda #800040 + toques "plata") */
 function resetEmailHtml({ name = 'usuario', resetUrl }) {
@@ -318,6 +337,7 @@ async function sendAccessNotificationEmail({
 }
 
 module.exports = {
+  initEmailProvider,
   resetEmailHtml,
   accessNotificationHtml,
   sendPasswordResetEmail,

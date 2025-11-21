@@ -41,21 +41,24 @@ app.get('/', (_req, res) =>
   res.send('servidor funcionando correctamente')
 );
 
-// ---------- SMTP + CRON JOBS ----------
-const { transporter } = require('./src/utils/mailer');
+// ---------- Proveedor de correo + CRON JOBS ----------
+const { initEmailProvider } = require('./src/utils/mailer');
 const { setupDailyResetJobs } = require('./src/jobs/dailyReset');
 
-// Verifica disponibilidad SMTP (no bloquea el arranque)
-transporter
-  .verify()
-  .then(() => console.log('✅ SMTP listo para enviar'))
-  .catch((err) =>
-    console.error('❌ SMTP no disponible:', err?.message || err)
-  );
+// Inicializa proveedor de correo (Resend)
+initEmailProvider()
+  .then(() => {
+    console.log('✅ Proveedor de correo inicializado (Resend)');
+  })
+  .catch((err) => {
+    console.error(
+      '⚠️ No se pudo inicializar el proveedor de correo:',
+      err?.message || err
+    );
+  });
 
 // Inicia jobs diarios (reset INSIDE → OUTSIDE a las 23:00 CDMX)
 setupDailyResetJobs({
-  // pon true si quieres que ejecute un reset inmediato al arrancar
   runOnStart: false,
 });
 
