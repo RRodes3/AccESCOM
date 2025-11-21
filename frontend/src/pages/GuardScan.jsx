@@ -4,6 +4,14 @@ import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import LastAccessesTable from '../components/LastAccessesTable';
 
+/* ---------- Configuración de URLs ---------- */
+// Obtener la base del backend desde la configuración de API
+const API_BASE_URL = api.defaults.baseURL || '/api';
+// Remover el /api final para obtener la raíz del servidor
+const ASSETS_BASE_URL =
+  process.env.REACT_APP_ASSETS_BASE_URL ||
+  API_BASE_URL.replace(/\/api\/?$/, '');
+
 /* ---------- beep corto OK/FAIL ---------- */
 function playFeedback(ok) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -84,6 +92,11 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
     PAE: 'PAE',
   };
 
+  // Construcción de URL completa de foto
+  const photoSrc = owner?.photoUrl
+    ? `${ASSETS_BASE_URL}${owner.photoUrl}`
+    : null;
+
   return (
     <div className="container mt-3 scan-result-card" style={{ maxWidth: 560 }}>
       {/* Banner de estado */}
@@ -157,11 +170,18 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
                   justifyContent: 'center',
                 }}
               >
-                {owner.photoUrl ? (
+                {photoSrc ? (
                   <img
-                    src={owner.photoUrl}
+                    src={photoSrc}
                     alt="Foto del usuario"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => {
+                      console.error('Error cargando foto:', photoSrc);
+                      e.target.style.display = 'none';
+                      e.target.parentElement.innerHTML = `<span style="font-size: 3rem; color: #333; font-weight: bold;">${
+                        (owner.firstName?.[0] || owner.name?.[0] || 'U').toUpperCase()
+                      }</span>`;
+                    }}
                   />
                 ) : (
                   <span
@@ -468,7 +488,7 @@ export default function GuardScan() {
       )}
 
       {!running && mode === 'camera' && (
-        <div className="mt-3 d-flex justify-content>end">
+        <div className="mt-3 d-flex justify-content-end">
           <button
             type="button"
             className="btn btn-outline-secondary"
