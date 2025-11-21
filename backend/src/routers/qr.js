@@ -12,13 +12,15 @@ const prisma = new PrismaClient();
 function recordAttempt(pass, status, reason) {
   try {
     if (!pass?.userId) return;
-    return prisma.qRAttempt.create({
-      data: {
-        userId: pass.userId,
-        status: String(status),
-        reason: (reason ?? '').toString().slice(0, 160),
-      },
-    }).catch(e => console.error('QRAttempt create error:', e));
+    return prisma.qRAttempt
+      .create({
+        data: {
+          userId: pass.userId,
+          status: String(status),
+          reason: (reason ?? '').toString().slice(0, 160),
+        },
+      })
+      .catch(e => console.error('QRAttempt create error:', e));
   } catch (e) {
     console.error('recordAttempt skipped:', e);
   }
@@ -61,6 +63,33 @@ async function createAccessLog({ kind, action, userId, guestId, qrId, guardId })
   if (qrId) data.qr = { connect: { id: qrId } };
   if (guardId) data.guard = { connect: { id: guardId } };
   return prisma.accessLog.create({ data });
+}
+
+// AccessEvent helper (para "Últimos accesos")
+async function createAccessEvent({
+  subjectType,
+  userId,
+  guestId,
+  guardId,
+  accessType,
+  result,
+  reason,
+}) {
+  try {
+    await prisma.accessEvent.create({
+      data: {
+        subjectType,
+        userId: userId || null,
+        guestId: guestId || null,
+        guardId: guardId || null,
+        accessType,
+        result,
+        reason,
+      },
+    });
+  } catch (e) {
+    console.error('AccessEvent create error:', e);
+  }
 }
 
 // Dueño del QR
@@ -176,10 +205,14 @@ router.get('/my-active', auth, requireRole(['USER', 'ADMIN']), async (req, res) 
     const accessState = u?.accessState || 'OUTSIDE';
 
     if (accessState === 'INSIDE' && kind === 'ENTRY') {
-      return res.status(409).json({ error: 'Tu QR de entrada está deshabilitado. Debes salir primero.' });
+      return res
+        .status(409)
+        .json({ error: 'Tu QR de entrada está deshabilitado. Debes salir primero.' });
     }
     if (accessState === 'OUTSIDE' && kind === 'EXIT') {
-      return res.status(409).json({ error: 'Tu QR de salida está deshabilitado. Debes entrar primero.' });
+      return res
+        .status(409)
+        .json({ error: 'Tu QR de salida está deshabilitado. Debes entrar primero.' });
     }
 
     const autocreate = String(req.query?.autocreate || '') === '1';
@@ -268,7 +301,22 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
     });
 
     if (!pass) {
-      await createAccessLog({ kind: 'ENTRY', action: 'VALIDATE_DENY', guardId: req.user.id });
+      await createAccessLog({
+        kind: 'ENTRY',
+        action: 'VALIDATE_DENY',
+        guardId: req.user.id,
+      });
+
+      await createAccessEvent({
+        subjectType: 'UNKNOWN',
+        userId: null,
+        guestId: null,
+        guardId: req.user.id,
+        accessType: 'ENTRY',
+        result: 'INVALID_QR',
+        reason: 'QR no encontrado',
+      });
+
       return res.status(404).json({
         ok: false,
         result: 'INVALID_QR',
@@ -301,10 +349,10 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         pass.status === 'EXPIRED'
           ? 'EXPIRED'
           : pass.status === 'USED'
-            ? 'USED'
-            : pass.status === 'REVOKED'
-              ? 'REVOKED'
-              : 'FAILED_STATUS',
+          ? 'USED'
+          : pass.status === 'REVOKED'
+          ? 'REVOKED'
+          : 'FAILED_STATUS',
         reason
       );
 
@@ -321,6 +369,16 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
           reason,
         }).catch(err => console.error('Email (status deny):', err));
       }
+
+      await createAccessEvent({
+        subjectType: isInstitutional ? 'INSTITUTIONAL' : 'GUEST',
+        userId: pass.userId || null,
+        guestId: pass.guestId || null,
+        guardId: req.user.id,
+        accessType,
+        result,
+        reason,
+      });
 
       return res.status(400).json({
         ok: false,
@@ -351,6 +409,16 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         }).catch(err => console.error('Email (expired deny):', err));
       }
 
+      await createAccessEvent({
+        subjectType: 'INSTITUTIONAL',
+        userId: pass.userId,
+        guestId: null,
+        guardId: req.user.id,
+        accessType,
+        result: 'EXPIRED_QR',
+        reason,
+      });
+
       return res.status(400).json({
         ok: false,
         result: 'EXPIRED_QR',
@@ -374,6 +442,17 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
           guardId: req.user.id,
         });
         recordAttempt(pass, 'STATE_DENY', reason);
+
+        await createAccessEvent({
+          subjectType: 'INSTITUTIONAL',
+          userId: u.id,
+          guestId: null,
+          guardId: req.user.id,
+          accessType,
+          result: 'DENIED',
+          reason,
+        });
+
         if (u.role === 'USER' && u.institutionalType && u.email) {
           const recipient = u.contactEmail || u.email;
           console.log('📧 Notificación ya dentro a:', recipient);
@@ -405,6 +484,17 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
           guardId: req.user.id,
         });
         recordAttempt(pass, 'STATE_DENY', reason);
+
+        await createAccessEvent({
+          subjectType: 'INSTITUTIONAL',
+          userId: u.id,
+          guestId: null,
+          guardId: req.user.id,
+          accessType,
+          result: 'DENIED',
+          reason,
+        });
+
         if (u.role === 'USER' && u.institutionalType && u.email) {
           const recipient = u.contactEmail || u.email;
           console.log('📧 Notificación aún no entra a:', recipient);
@@ -442,6 +532,16 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
 
       recordAttempt(pass, 'SUCCESS', successReason);
 
+      await createAccessEvent({
+        subjectType: 'INSTITUTIONAL',
+        userId: u.id,
+        guestId: null,
+        guardId: req.user.id,
+        accessType,
+        result: 'ALLOWED',
+        reason: successReason,
+      });
+
       res.json({
         ok: true,
         result: 'ALLOWED',
@@ -455,13 +555,13 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         setImmediate(() => {
           const recipient = u.contactEmail || u.email;
           console.log('📧 Notificación acceso permitido (validate) a:', recipient);
-            sendAccessNotificationEmail({
-              to: recipient,
-              name: ownerAllowed?.name || buildFullName(u),
-              type: accessType,
-              date: new Date(),
-              locationName: 'ESCOM',
-            }).catch(err => console.error('Email acceso async (validate):', err));
+          sendAccessNotificationEmail({
+            to: recipient,
+            name: ownerAllowed?.name || buildFullName(u),
+            type: accessType,
+            date: new Date(),
+            locationName: 'ESCOM',
+          }).catch(err => console.error('Email acceso async (validate):', err));
         });
       }
       return;
@@ -480,6 +580,17 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
           qrId: pass.id,
           guardId: req.user.id,
         });
+
+        await createAccessEvent({
+          subjectType: 'GUEST',
+          userId: null,
+          guestId: g.id,
+          guardId: req.user.id,
+          accessType,
+          result: 'DENIED',
+          reason,
+        });
+
         return res.status(400).json({
           ok: false,
           result: 'DENIED',
@@ -498,6 +609,17 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
           qrId: pass.id,
           guardId: req.user.id,
         });
+
+        await createAccessEvent({
+          subjectType: 'GUEST',
+          userId: null,
+          guestId: g.id,
+          guardId: req.user.id,
+          accessType,
+          result: 'DENIED',
+          reason,
+        });
+
         return res.status(400).json({
           ok: false,
           result: 'DENIED',
@@ -522,10 +644,23 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
 
       const ownerAllowed = buildOwner({ ...pass, guest: { ...g, state: newState } });
 
+      const successReasonGuest =
+        pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido';
+
+      await createAccessEvent({
+        subjectType: 'GUEST',
+        userId: null,
+        guestId: g.id,
+        guardId: req.user.id,
+        accessType,
+        result: 'ALLOWED',
+        reason: successReasonGuest,
+      });
+
       return res.json({
         ok: true,
         result: 'ALLOWED',
-        reason: pass.kind === 'EXIT' ? 'Salida permitida' : 'Acceso permitido',
+        reason: successReasonGuest,
         accessType,
         owner: ownerAllowed,
         pass: { kind: pass.kind, status: 'USED' },
@@ -540,6 +675,17 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
       qrId: pass.id,
       guardId: req.user.id,
     });
+
+    await createAccessEvent({
+      subjectType: isInstitutional ? 'INSTITUTIONAL' : 'GUEST',
+      userId: pass.userId || null,
+      guestId: pass.guestId || null,
+      guardId: req.user.id,
+      accessType,
+      result: 'INVALID_QR',
+      reason,
+    });
+
     return res.status(400).json({
       ok: false,
       result: 'INVALID_QR',
@@ -683,7 +829,7 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
               reason: true,
             },
           },
-            guard: { select: { name: true, email: true } },
+          guard: { select: { name: true, email: true } },
           qr: { select: { code: true, kind: true } },
         },
       }),
@@ -889,7 +1035,9 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
         role: 'GUEST',
         kind: 'GUEST',
         id: pass.guest.id,
-        name: [pass.guest.firstName, pass.guest.lastNameP, pass.guest.lastNameM].filter(Boolean).join(' '),
+        name: [pass.guest.firstName, pass.guest.lastNameP, pass.guest.lastNameM]
+          .filter(Boolean)
+          .join(' '),
         firstName: pass.guest.firstName,
         lastNameP: pass.guest.lastNameP,
         lastNameM: pass.guest.lastNameM,
