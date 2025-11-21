@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+import '../../components/Common.css';
 
 
 function QrPanel({ kind, onClose }) {
-  const nav = useNavigate(); //llamado de botón de regresar
+  const nav = useNavigate();
   const [pass, setPass] = useState(null);
   const [error, setError] = useState('');
 
@@ -14,7 +15,7 @@ function QrPanel({ kind, onClose }) {
     setError('');
     try {
       const { data } = await api.get('/qr/my-active', {
-        params: { kind, autocreate: '1' }, // ← reutiliza o crea si no hay
+        params: { kind, autocreate: '1' },
       });
       setPass(data.pass || null);
       if (!data.pass) setError('No hay QR disponible.');
@@ -33,7 +34,7 @@ function QrPanel({ kind, onClose }) {
       const left = end - Date.now();
       if (left <= 5000) {
         clearInterval(id);
-        load(); // rota si expiró
+        load();
       }
     }, 1000);
     return () => clearInterval(id);
@@ -46,7 +47,7 @@ function QrPanel({ kind, onClose }) {
         <div className="d-flex gap-2 justify-content-center">
           <button
             className="btn btn-outline-secondary"
-            onClick={onClose} // te regresa a los dos botones del dashboard
+            onClick={onClose}
           >
             Regresar
           </button>
@@ -54,18 +55,11 @@ function QrPanel({ kind, onClose }) {
       </div>
     );
   }
-  if (!pass)   return <div className="mt-3">Cargando…</div>;
+  if (!pass) return <div className="mt-3">Cargando…</div>;
 
   const leftSec = pass.expiresAt
     ? Math.max(0, Math.floor((new Date(pass.expiresAt).getTime() - Date.now()) / 1000))
     : null;
-
-    //BOTÓN DE REGRESAR
-    /*<button className="btn btn-outline-secondary" onClick={() => nav('/dashboard')}>
-      Regresar
-    </button>
-    */
-
 
   return (
     <div className="text-center mt-3">
@@ -83,7 +77,7 @@ function QrPanel({ kind, onClose }) {
 
 export default function UserDashboard() {
   const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const [showKind, setShowKind] = useState(null); // 'ENTRY' | 'EXIT' | null
+  const [showKind, setShowKind] = useState(null);
 
   const openKind = async (kind) => {
     try { await api.post('/qr/ensure-both'); } catch {}
@@ -94,17 +88,29 @@ export default function UserDashboard() {
     <div className="container mt-3" style={{ maxWidth: 480 }}>
 
       {!showKind ? (
-        <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3 text-center">
-          <p className="mb-3">Elige la acción que desees realizar:</p>
-          <div className="d-flex gap-3 justify-content-center">
-            <button className="btn btn-primary" onClick={() => openKind('ENTRY')}>
-              Mostrar QR de entrada
-            </button>
-            <button className="btn btn-primary" onClick={() => openKind('EXIT')}>
-              Mostrar QR de salida
-            </button>
+        <>
+          <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3 text-center">
+            <p className="mb-3">Elige la acción que desees realizar:</p>
+            <div className="d-flex gap-3 justify-content-center">
+              <button className="btn btn-primary" onClick={() => openKind('ENTRY')}>
+                Mostrar QR de entrada
+              </button>
+              <button className="btn btn-primary" onClick={() => openKind('EXIT')}>
+                Mostrar QR de salida
+              </button>
+            </div>
           </div>
-        </div>
+
+          {/* Mensaje de soporte */}
+          <div className="soporte-box">
+            <p className="soporte-texto">
+              ¿Tienes alguna duda o comentario?{" "}
+              <a href="mailto:AccESCOM.app@gmail.com" className="soporte-link">
+                Contáctanos aquí
+              </a>.
+            </p>
+          </div>
+        </>
       ) : (
         <QrPanel kind={showKind} onClose={() => setShowKind(null)} />
       )}

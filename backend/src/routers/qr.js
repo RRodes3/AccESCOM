@@ -651,7 +651,7 @@ router.post('/ensure-both', auth, requireRole(['USER', 'ADMIN']), async (req, re
   }
 });
 
-// Logs
+// Logs (histórico completo - admin)
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
     const take = Math.min(parseInt(req.query.take || '50', 10), 200);
@@ -694,6 +694,59 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudieron obtener los logs' });
+  }
+});
+
+// Últimos accesos (para panel de guardia y admin)
+router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
+  try {
+    const take = Math.min(parseInt(req.query.take || '10', 10), 200);
+    const skip = parseInt(req.query.skip || '0', 10);
+
+    const [items, total] = await Promise.all([
+      prisma.accessEvent.findMany({
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastNameP: true,
+              lastNameM: true,
+              boleta: true,
+              email: true,
+              photoUrl: true,
+            },
+          },
+          guest: {
+            select: {
+              id: true,
+              firstName: true,
+              lastNameP: true,
+              lastNameM: true,
+              curp: true,
+              reason: true,
+            },
+          },
+          guard: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.accessEvent.count(),
+    ]);
+
+    res.json({ items, total });
+  } catch (e) {
+    console.error('qr/last-accesses error:', e);
+    res.status(500).json({ error: 'No se pudieron obtener los últimos accesos' });
   }
 });
 

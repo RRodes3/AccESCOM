@@ -1,0 +1,28 @@
+/* frontend/src/components/Common.css */
+
+/* Caja de soporte para mensajes de contacto */
+.soporte-box {
+  margin-top: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background-color: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.soporte-texto {
+  margin: 0;
+  color: #333;
+}
+
+.soporte-link {
+  color: #800040;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.soporte-link:hover {
+  color: #600030;
+  text-decoration: none;
+}
