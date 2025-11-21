@@ -6,13 +6,15 @@ const RE_BOLETA    = /^\d{10}$/;
 const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
+const RE_EMAIL_GENERIC = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 const isInstitutional = (e) => RE_EMAIL_DOT.test((e||'').trim()) || RE_EMAIL_COMPACT.test((e||'').trim());
 
 export default function Register() {
   const nav = useNavigate();
   const [form, setForm] = useState({
     boleta: '', firstName: '', lastNameP: '', lastNameM: '',
-    email: '', password: ''
+    email: '', contactEmail: '', password: ''
   });
   const [errors, setErrors] = useState({});
   const [msg, setMsg] = useState('');
@@ -26,6 +28,9 @@ export default function Register() {
       case 'lastNameP': if (!value.trim() || !RE_LETTERS.test(value)) return 'Usa solo letras y espacios.'; break;
       case 'lastNameM': if (!value.trim() || !RE_LETTERS.test(value)) return 'Usa solo letras y espacios.'; break;
       case 'email':     if (!value.trim() || !isInstitutional(value)) return 'Correo institucional requerido.'; break;
+      case 'contactEmail': 
+        if (value.trim() && !RE_EMAIL_GENERIC.test(value)) return 'Formato de correo inválido.';
+        break;
       case 'password':  if (!RE_PASSWORD.test(value)) return 'Mínimo 12 caracteres con mayúsc./minúsc./número/símbolo.'; break;
       default: break;
     }
@@ -41,10 +46,16 @@ export default function Register() {
 
   const formErrors = useMemo(() => {
     const e = {};
-    Object.entries(form).forEach(([k, v]) => {
-      const err = validateField(k, v);
+    // Validar solo campos requeridos
+    ['boleta', 'firstName', 'lastNameP', 'lastNameM', 'email', 'password'].forEach(k => {
+      const err = validateField(k, form[k]);
       if (err) e[k] = err;
     });
+    // Validar contactEmail solo si tiene valor
+    if (form.contactEmail) {
+      const err = validateField('contactEmail', form.contactEmail);
+      if (err) e.contactEmail = err;
+    }
     return e;
   }, [form]);
 
@@ -111,6 +122,18 @@ export default function Register() {
           value={form.email} onChange={onChange}
         />
         {errors.email && <div className="invalid-feedback d-block">{errors.email}</div>}
+
+        <label className="form-label mt-3">Correo de contacto (personal) — Opcional</label>
+        <input
+          name="contactEmail" type="email"
+          className={`form-control ${errors.contactEmail ? 'is-invalid' : ''} mb-2 bg-white`}
+          placeholder="Ej. usuario@gmail.com"
+          value={form.contactEmail} onChange={onChange}
+        />
+        {errors.contactEmail && <div className="invalid-feedback d-block">{errors.contactEmail}</div>}
+        <small className="text-light">
+          Las notificaciones de acceso y restablecimiento de contraseña se enviarán a este correo (si lo proporcionas) además del institucional.
+        </small>
 
         {msg && <div className="alert alert-danger mt-3">{msg}</div>}
 
