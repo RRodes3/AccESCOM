@@ -1,31 +1,38 @@
 // backend/src/utils/mailer.js
+const { Resend } = require('resend');
 
-// ✅ Usamos nuestro wrapper de Resend
-const { sendEmail } = require('./mailer.resend');
+const resendApiKey = process.env.RESEND_API_KEY || '';
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
-/**
- * Inicializa el proveedor de correo (Resend).
- * Valida que la API key esté configurada.
- */
-async function initEmailProvider() {
-  if (!process.env.RESEND_API_KEY) {
-    throw new Error(
-      'RESEND_API_KEY no está configurada en las variables de entorno'
-    );
+// ---------- Helper para normalizar y validar el "to" ----------
+function normalizeEmail(raw) {
+  if (!raw) return null;
+
+  let e = String(raw).trim();
+
+  // Si viene tipo "Nombre <correo@dominio.com>" lo dejamos así
+  if (e.includes('<') && e.includes('>')) {
+    return e;
   }
 
-  // Opcionalmente, puedes hacer una prueba de envío o verificación aquí
-  // Por ejemplo, consultar dominios verificados:
-  // const { Resend } = require('resend');
-  // const resend = new Resend(process.env.RESEND_API_KEY);
-  // const domains = await resend.domains.list();
-  // if (!domains?.data?.length) throw new Error('No hay dominios verificados');
+  // Si viene algo como "Nombre correo@dominio.com" intentamos quedarnos con la última "palabra"
+  if (/\s/.test(e) && !e.includes('<')) {
+    const parts = e.split(/\s+/);
+    const last = parts[parts.length - 1];
+    if (last.includes('@')) {
+      e = last.trim();
+    }
+  }
 
-  console.log('✅ Resend API key detectada');
-  return true;
+  // Regex sencilla para validar correo
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!re.test(e)) {
+    return null;
+  }
+  return e;
 }
 
-/** Plantilla HTML (IPN guinda #800040 + toques "plata") */
+// ---------- Plantilla reset (tu HTML tal cual) ----------
 function resetEmailHtml({ name = 'usuario', resetUrl }) {
   const preheader = `Restablece tu contraseña. El enlace expira en 30 minutos.`;
   return `
@@ -93,7 +100,7 @@ function resetEmailHtml({ name = 'usuario', resetUrl }) {
   `;
 }
 
-/** Plantilla HTML para notificación de acceso (entrada/salida) */
+// ---------- Plantilla acceso (tu HTML tal cual) ----------
 function accessNotificationHtml({ name = 'usuario', type, date, locationName, reason }) {
   const isEntry = type === 'ENTRY';
   const accion = isEntry ? 'entrada' : 'salida';
@@ -282,8 +289,20 @@ function accessNotificationHtml({ name = 'usuario', type, date, locationName, re
   `;
 }
 
-/** Helper de envío - Restablecimiento de contraseña */
+// ---------- Helpers de envío usando Resend ----------
+
 async function sendPasswordResetEmail({ to, name, resetUrl }) {
+  if (!resend) {
+    console.warn('⚠️ Resend no está inicializado, no se envía correo de reset.');
+    return;
+  }
+
+  const toEmail = normalizeEmail(to);
+  if (!toEmail) {
+    console.warn('⚠️ Email de destino inválido en reset, no se envía.', { to });
+    return;
+  }
+
   const html = resetEmailHtml({ name, resetUrl });
   const text = `Hola ${name || 'usuario'}:
 Solicitaste restablecer tu contraseña. Enlace (expira en 30 minutos):
@@ -291,17 +310,19 @@ ${resetUrl}
 
 Si no fuiste tú, ignora este correo.`;
 
-  await sendEmail({
-    to,
+  const from = process.env.EMAIL_FROM || 'AccESCOM <onboarding@resend.dev>';
+
+  const result = await resend.emails.send({
+    from,
+    to: toEmail,
     subject: 'Restablece tu contraseña de AccESCOM',
     html,
     text,
   });
+
+  console.log('📨 Resend reset:', result);
 }
 
-/**
- * Helper de envío - Notificación de acceso (entrada/salida con QR)
- */
 async function sendAccessNotificationEmail({
   to,
   name,
@@ -310,36 +331,93 @@ async function sendAccessNotificationEmail({
   locationName,
   reason,
 }) {
-  if (!to) return;
+  if (!resend) {
+    console.warn('⚠️ Resend no está inicializado, no se envía notificación de acceso.');
+    return;
+  }
+
+  const toEmail = normalizeEmail(to);
+  if (!toEmail) {
+    console.warn('⚠️ Email de destino inválido en notificación de acceso, no se envía.', { to });
+    return;
+  }
+
+  const safeName = name || 'usuario';
+  const when = date instanceof Date ? date : new Date();
+  const lugar = locationName || 'ESCOM';
+  const isEntry = type === 'ENTRY';
+  const accion = isEntry ? 'entrada' : 'salida';
+  const accionCapital = isEntry ? 'Entrada' : 'Salida';
+  const emoji = isEntry ? '🟢' : '🔴';
+
+  const fechaTexto = when.toLocaleString('es-MX', {
+    timeZone: 'America/Mexico_City',
+    dateStyle: 'full',
+    timeStyle: 'short',
+  });
+
+  const esDenegado = !!reason && /deneg|expir|revoc|no activo|ya fue utilizado|inválid/i.test(reason);
+  const esAdvertencia =
+    !!reason &&
+    !esDenegado &&
+    /ya está dentro|ya esta dentro|se encuentra dentro|se encuentra fuera|ya está fuera|ya esta fuera|aún no ha entrado|aun no ha entrado|visita completada/i.test(reason);
+
+  let statusText = 'Acceso permitido';
+  if (esDenegado) {
+    statusText = isEntry ? 'Acceso denegado' : 'Salida denegada';
+  } else if (esAdvertencia) {
+    statusText = 'Advertencia';
+  } else {
+    statusText = isEntry ? 'Acceso permitido' : 'Salida permitida';
+  }
+
+  const subject = `AccESCOM - ${esDenegado ? 'Intento' : 'Registro'} de ${accion}${
+    esDenegado ? ' (denegado)' : ''
+  }`;
+  const preheader = `${esDenegado ? 'Intento' : 'Registro'} de ${accion} en ${lugar}`;
 
   const html = accessNotificationHtml({
-    name,
+    name: safeName,
     type,
-    date,
-    locationName,
+    date: when,
+    locationName: lugar,
     reason,
   });
 
-  const isEntry = type === 'ENTRY';
-  const accion = isEntry ? 'entrada' : 'salida';
-  const esDenegado =
-    !!reason && /deneg|expir|revoc|no activo|ya fue utilizado|inválid/i.test(reason);
+  const text = [
+    `Hola ${safeName},`,
+    `${esDenegado ? 'Intento de' : 'Registro de'} ${accion} en ${lugar}.`,
+    `Tipo de registro: ${accionCapital}`,
+    `Fecha y hora: ${fechaTexto}`,
+    `Ubicación: ${lugar}`,
+    reason ? `${esDenegado ? 'Motivo' : 'Observación'}: ${reason}` : '',
+    '',
+    esDenegado
+      ? 'Si no reconoces este intento, contacta al personal de control de acceso.'
+      : 'Si no reconoces este registro, repórtalo al personal de control de acceso.',
+    '',
+    '— Sistema AccESCOM',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
-  const subject = `AccESCOM - ${
-    esDenegado ? 'Intento' : 'Registro'
-  } de ${accion}${esDenegado ? ' (denegado)' : ''}`;
+  const from = process.env.EMAIL_FROM || 'AccESCOM <onboarding@resend.dev>';
 
-  await sendEmail({
-    to,
+  const result = await resend.emails.send({
+    from,
+    to: toEmail,
     subject,
     html,
+    text,
+    headers: {
+      'X-Preheader': preheader,
+    },
   });
+
+  console.log('📨 Resend acceso:', result);
 }
 
 module.exports = {
-  initEmailProvider,
-  resetEmailHtml,
-  accessNotificationHtml,
   sendPasswordResetEmail,
   sendAccessNotificationEmail,
 };
