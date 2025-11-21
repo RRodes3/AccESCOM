@@ -455,13 +455,13 @@ router.post('/validate', auth, requireRole(['GUARD', 'ADMIN']), async (req, res)
         setImmediate(() => {
           const recipient = u.contactEmail || u.email;
           console.log('📧 Notificación acceso permitido (validate) a:', recipient);
-          sendAccessNotificationEmail({
-            to: recipient,
-            name: ownerAllowed?.name || buildFullName(u),
-            type: accessType,
-            date: new Date(),
-            locationName: 'ESCOM',
-          }).catch(err => console.error('Email acceso async (validate):', err));
+            sendAccessNotificationEmail({
+              to: recipient,
+              name: ownerAllowed?.name || buildFullName(u),
+              type: accessType,
+              date: new Date(),
+              locationName: 'ESCOM',
+            }).catch(err => console.error('Email acceso async (validate):', err));
         });
       }
       return;
@@ -651,7 +651,7 @@ router.post('/ensure-both', auth, requireRole(['USER', 'ADMIN']), async (req, re
   }
 });
 
-// Logs (histórico completo - admin)
+// Logs históricos (accessLog) - admin
 router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   try {
     const take = Math.min(parseInt(req.query.take || '50', 10), 200);
@@ -683,7 +683,7 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
               reason: true,
             },
           },
-          guard: { select: { name: true, email: true } },
+            guard: { select: { name: true, email: true } },
           qr: { select: { code: true, kind: true } },
         },
       }),
@@ -697,7 +697,7 @@ router.get('/logs', auth, requireRole(['ADMIN']), async (req, res) => {
   }
 });
 
-// Últimos accesos (para panel de guardia y admin)
+// Últimos accesos rápidos (accessEvent) - guard + admin
 router.get('/last-accesses', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   try {
     const take = Math.min(parseInt(req.query.take || '10', 10), 200);
@@ -778,7 +778,7 @@ router.post('/reset-state', auth, async (req, res) => {
   }
 });
 
-// Scan rápido
+// Scan rápido (solo registra evento ligero y posible notificación)
 router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => {
   const { code } = req.body || {};
   if (!code) return res.status(400).json({ ok: false, error: 'Falta code' });
