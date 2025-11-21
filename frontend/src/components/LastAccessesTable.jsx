@@ -18,8 +18,69 @@ export default function LastAccessesTable() {
     setError('');
     try {
       const res = await getLastAccesses({ take, skip });
-      setAccesses(res.data.accesses || []);
-      setPagination(res.data.pagination || {});
+
+      // ⚠️ Backend actual devuelve: { items, total }
+      const data = res.data || {};
+      const items = data.items || [];
+
+      // Mapeamos AccessEvent -> shape que la tabla espera
+      const mappedAccesses = items.map((ev) => {
+        const user = ev.user || null;
+        const guest = ev.guest || null;
+
+        const userFullName = user
+          ? user.name ||
+            [user.firstName, user.lastNameP, user.lastNameM]
+              .filter(Boolean)
+              .join(' ')
+          : '';
+
+        const guestFullName = guest
+          ? [guest.firstName, guest.lastNameP, guest.lastNameM]
+              .filter(Boolean)
+              .join(' ')
+          : '';
+
+        return {
+          id: ev.id,
+          createdAt: ev.createdAt,
+          // Lo que la tabla usa:
+          user: user
+            ? {
+                name: userFullName || user.email || 'Desconocido',
+                boleta: user.boleta || '',
+                photoUrl: user.photoUrl || null,
+              }
+            : null,
+          guest: guest
+            ? {
+                name: guestFullName || 'Invitado',
+                curp: guest.curp || '',
+                reason: guest.reason || '',
+              }
+            : null,
+          // La tabla espera access.qr.kind
+          qr: {
+            kind: ev.accessType, // ENTRY / EXIT
+          },
+          // Y access.action para pintar el badge
+          action: ev.result, // ALLOWED / DENIED / INVALID_QR / EXPIRED_QR...
+        };
+      });
+
+      setAccesses(mappedAccesses);
+
+      const total = data.total ?? items.length;
+      const totalPages = total > 0 ? Math.ceil(total / take) : 1;
+      const currentPage = Math.floor(skip / take) + 1;
+
+      setPagination({
+        total,
+        take,
+        skip,
+        totalPages,
+        currentPage,
+      });
     } catch (err) {
       setError('Error al cargar los accesos');
       console.error(err);
@@ -30,6 +91,7 @@ export default function LastAccessesTable() {
 
   useEffect(() => {
     fetchAccesses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePageChange = (newPage) => {
@@ -67,7 +129,7 @@ export default function LastAccessesTable() {
       </div>
       <div className="card-body">
         {error && <div className="alert alert-danger">{error}</div>}
-        
+
         <div className="table-responsive">
           <table className="table table-hover last-accesses-table">
             <thead>
@@ -88,7 +150,8 @@ export default function LastAccessesTable() {
                 </tr>
               ) : (
                 accesses.map((access) => {
-                  const userName = access.user?.name || access.guest?.name || 'Desconocido';
+                  const userName =
+                    access.user?.name || access.guest?.name || 'Desconocido';
                   const userBoleta = access.user?.boleta || '';
                   const guestCurp = access.guest?.curp || '';
                   const guestReason = access.guest?.reason || '';
@@ -98,7 +161,11 @@ export default function LastAccessesTable() {
 
                   return (
                     <tr key={access.id}>
-                      <td>{new Date(access.createdAt).toLocaleString('es-MX')}</td>
+                      <td>
+                        {access.createdAt
+                          ? new Date(access.createdAt).toLocaleString('es-MX')
+                          : '—'}
+                      </td>
                       <td>
                         {access.user?.photoUrl && (
                           <img
@@ -110,20 +177,47 @@ export default function LastAccessesTable() {
                         )}
                         {userName}
                         {isGuest
-                          ? guestCurp && <span className="text-muted"> ({guestCurp})</span>
-                          : userBoleta && <span className="text-muted"> ({userBoleta})</span>}
+                          ? guestCurp && (
+                              <span className="text-muted"> ({guestCurp})</span>
+                            )
+                          : userBoleta && (
+                              <span className="text-muted"> ({userBoleta})</span>
+                            )}
                       </td>
                       <td className="col-motivo">
-                        {isGuest ? (guestReason || <span className="text-muted">—</span>) : <span className="text-muted">—</span>}
+                        {isGuest ? (
+                          guestReason || <span className="text-muted">—</span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
                       <td>
-                        <span className={`badge bg-${qrKind === 'ENTRY' ? 'success' : 'warning'}`}>
-                          {qrKind === 'ENTRY' ? 'Entrada' : qrKind === 'EXIT' ? 'Salida' : qrKind}
+                        <span
+                          className={`badge bg-${
+                            qrKind === 'ENTRY'
+                              ? 'success'
+                              : qrKind === 'EXIT'
+                              ? 'warning'
+                              : 'secondary'
+                          }`}
+                        >
+                          {qrKind === 'ENTRY'
+                            ? 'Entrada'
+                            : qrKind === 'EXIT'
+                            ? 'Salida'
+                            : qrKind}
                         </span>
                       </td>
                       <td>
-                        <span className={`badge bg-${action.includes('ALLOW') ? 'success' : 'danger'}`}>
-                          {action.replace('VALIDATE_', '')}
+                        <span
+                          className={`badge bg-${
+                            String(action).includes('ALLOW') ||
+                            String(action).includes('ALLOWED')
+                              ? 'success'
+                              : 'danger'
+                          }`}
+                        >
+                          {String(action).replace('VALIDATE_', '')}
                         </span>
                       </td>
                     </tr>
@@ -141,7 +235,11 @@ export default function LastAccessesTable() {
               Mostrando {accesses.length} de {pagination.total} registros
             </div>
             <ul className="pagination pagination-sm mb-0">
-              <li className={`page-item ${pagination.currentPage === 1 ? 'disabled' : ''}`}>
+              <li
+                className={`page-item ${
+                  pagination.currentPage === 1 ? 'disabled' : ''
+                }`}
+              >
                 <button
                   className="page-link"
                   onClick={() => handlePageChange(pagination.currentPage - 1)}
@@ -150,10 +248,9 @@ export default function LastAccessesTable() {
                   Anterior
                 </button>
               </li>
-              
+
               {[...Array(pagination.totalPages)].map((_, i) => {
                 const page = i + 1;
-                // Mostrar solo páginas cercanas (max 5)
                 if (
                   page === 1 ||
                   page === pagination.totalPages ||
@@ -162,7 +259,9 @@ export default function LastAccessesTable() {
                   return (
                     <li
                       key={page}
-                      className={`page-item ${page === pagination.currentPage ? 'active' : ''}`}
+                      className={`page-item ${
+                        page === pagination.currentPage ? 'active' : ''
+                      }`}
                     >
                       <button
                         className="page-link"
@@ -186,11 +285,21 @@ export default function LastAccessesTable() {
                 return null;
               })}
 
-              <li className={`page-item ${pagination.currentPage === pagination.totalPages ? 'disabled' : ''}`}>
+              <li
+                className={`page-item ${
+                  pagination.currentPage === pagination.totalPages
+                    ? 'disabled'
+                    : ''
+                }`}
+              >
                 <button
                   className="page-link"
-                  onClick={() => handlePageChange(pagination.currentPage + 1)}
-                  disabled={pagination.currentPage === pagination.totalPages || loading}
+                  onClick={() =>
+                    handlePageChange(pagination.currentPage + 1)
+                  }
+                  disabled={
+                    pagination.currentPage === pagination.totalPages || loading
+                  }
                 >
                   Siguiente
                 </button>
