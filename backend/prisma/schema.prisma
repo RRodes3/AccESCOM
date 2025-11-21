@@ -72,6 +72,8 @@ model User {
   qrPasses      QRPass[]
   accessLogs    AccessLog[]     @relation("AccessByUser")
   guardLogs     AccessLog[]     @relation("ValidatedByGuard")
+  accessEvents      AccessEvent[] @relation("AccessEventByUser")
+  guardAccessEvents AccessEvent[] @relation("AccessEventByGuard")
   PasswordReset PasswordReset[]
   failedAttempts      Int       @default(0) // Contador de intentos fallidos
   lastFailedAttempt   DateTime  @default(now()) // Fecha del último intento fallido
@@ -94,6 +96,8 @@ model GuestVisit {
 
   passes QRPass[]
   logs   AccessLog[] @relation("AccessByGuest")
+  accessEvents AccessEvent[] @relation("AccessEventByGuest")
+
 
   @@index([curp]) // << QUITAR @unique y dejarlo con índice normal
 }
@@ -158,4 +162,39 @@ model QRAttempt {
   reason       String    // Razón del fallo, ej: 'QR Expirado', 'Intento Repetido'
 
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AccessEvent {
+  id Int @id @default(autoincrement())
+
+  // INSTITUTIONAL | GUEST
+  subjectType String @db.VarChar(32)
+
+  // Relación con usuario institucional
+  userId Int?
+  user   User? @relation("AccessEventByUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Relación con invitado
+  guestId Int?
+  guest   GuestVisit? @relation("AccessEventByGuest", fields: [guestId], references: [id])
+
+  // Guardia que escaneó
+  guardId Int?
+  guard   User? @relation("AccessEventByGuard", fields: [guardId], references: [id], onDelete: SetNull)
+
+  // ENTRY / EXIT (usa enum QRKind)
+  accessType QRKind
+
+  // ALLOWED | INVALID_QR | EXPIRED_QR | DENIED | ERROR ...
+  result String @db.VarChar(32)
+
+  // Mensaje corto: 'QR válido', 'QR no activo', etc.
+  reason String @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([guestId])
+  @@index([guardId])
 }
