@@ -15,7 +15,21 @@ async function resetInsideUsers() {
 
   const insideUsers = await prisma.user.findMany({
     where: { accessState: 'INSIDE' },
-    select: { id: true },
+    select: {
+      id: true,
+      boleta: true,
+      firstName: true,
+      lastNameP: true,
+      lastNameM: true,
+      name: true,
+      email: true,
+      contactEmail: true,
+      role: true,
+      isActive: true,
+      mustChangePassword: true,
+      institutionalType: true,
+      createdAt: true,
+    },
   });
 
   if (!insideUsers.length) {

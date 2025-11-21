@@ -13,6 +13,7 @@ const RE_BOLETA = /^\d{10}$/;
 const RE_EMAIL_DOT = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
 const RE_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+const RE_EMAIL_GENERIC = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const isInstitutional = (email) =>
   RE_EMAIL_DOT.test((email || '').trim()) ||
@@ -178,7 +179,9 @@ async function importUsersWithPhotos(zipPath) {
         const email = String(row.email || '').trim().toLowerCase();
         const role = String(row.role || row.rol || 'USER').trim().toUpperCase();
         let institutionalType = String(row.institutionaltype || row.tipo || '').trim().toUpperCase();
-        const photoUrlRaw = String(row.photourl || '').trim();
+        const photoUrlRaw = String(row.photourl || row.foto || '').trim();
+        const contactEmailRaw = String(row.contactemail || row.contact || '').trim().toLowerCase();
+        const contactEmail = (role !== 'GUARD' && contactEmailRaw) ? contactEmailRaw : null;
 
         if (!institutionalType && role === 'USER') {
           if (/@alumno\.ipn\.mx$/i.test(email)) institutionalType = 'STUDENT';
@@ -192,6 +195,7 @@ async function importUsersWithPhotos(zipPath) {
         if (!lastNameM || !RE_LETTERS.test(lastNameM)) rowErrors.lastNameM = 'Apellido materno inválido';
         if (!email || !isInstitutional(email)) rowErrors.email = 'Correo institucional inválido';
         if (!['ADMIN', 'GUARD', 'USER'].includes(role)) rowErrors.role = 'Role inválido';
+        if (contactEmail && !RE_EMAIL_GENERIC.test(contactEmail)) rowErrors.contactEmail = 'Correo contacto inválido';
 
         if (Object.keys(rowErrors).length) {
             results.errors.push({ line: lineNumber, errors: rowErrors, data: row });

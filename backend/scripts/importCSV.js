@@ -11,6 +11,7 @@ const RE_LETTERS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]+$/;
 const RE_BOLETA = /^\d{10}$/;
 const RE_EMAIL_DOT = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
+const RE_EMAIL_GENERIC = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const RE_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 
 const isInstitutional = (email) =>
@@ -122,6 +123,8 @@ async function importCSV(csvPath, actionOnConflict = 'overwrite') {
             const role = String(row.role || row.rol || 'USER').trim().toUpperCase();
             let institutionalType = String(row.institutionaltype || row.tipo || '').trim().toUpperCase();
             const photoUrl = String(row.photourl || row.foto || '').trim() || null;
+            const contactEmailRaw = String(row.contactemail || row.contact || '').trim().toLowerCase();
+            const contactEmail = (role !== 'GUARD' && contactEmailRaw) ? contactEmailRaw : null;
 
             // Inferir institutionalType si no viene
             if (!institutionalType && role === 'USER') {
@@ -140,6 +143,7 @@ async function importCSV(csvPath, actionOnConflict = 'overwrite') {
             if (!lastNameM || !RE_LETTERS.test(lastNameM)) rowErrors.lastNameM = 'Apellido materno inválido';
             if (!email || !isInstitutional(email)) rowErrors.email = 'Correo institucional inválido';
             if (!['ADMIN', 'GUARD', 'USER'].includes(role)) rowErrors.role = 'Role inválido';
+            if (contactEmail && !RE_EMAIL_GENERIC.test(contactEmail)) rowErrors.contactEmail = 'Correo contacto inválido';
 
             if (Object.keys(rowErrors).length > 0) {
               results.errors.push({ line: lineNumber, errors: rowErrors, data: row });
@@ -170,30 +174,23 @@ async function importCSV(csvPath, actionOnConflict = 'overwrite') {
             const user = await prisma.user.upsert({
               where: { email },
               update: {
-                firstName,
-                lastNameP,
-                lastNameM,
-                boleta,
-                role,
+                firstName, lastNameP, lastNameM, boleta, role,
                 institutionalType: instTypeEnum ?? undefined,
                 password: passwordHash,
                 name: buildFullName(firstName, lastNameP, lastNameM),
                 photoUrl: photoUrl || undefined,
+                contactEmail: contactEmail || null
               },
               create: {
-                firstName,
-                lastNameP,
-                lastNameM,
-                boleta,
-                email,
-                role,
+                firstName, lastNameP, lastNameM, boleta, email, role,
                 institutionalType: instTypeEnum ?? undefined,
                 password: passwordHash,
                 name: buildFullName(firstName, lastNameP, lastNameM),
                 isActive: true,
                 mustChangePassword: role === 'USER',
                 photoUrl: photoUrl || null,
-              },
+                contactEmail: contactEmail || null
+              }
             });
 
             if (existingUser) {

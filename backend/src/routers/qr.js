@@ -348,6 +348,7 @@ router.post(
               name: true,
               boleta: true,
               email: true,
+              contactEmail: true,
               firstName: true,
               lastNameP: true,
               lastNameM: true,
@@ -476,7 +477,7 @@ router.post(
           recordAttempt(pass, 'STATE_DENY', reason);
           if (u.role === 'USER' && u.institutionalType && u.email) {
             sendAccessNotificationEmail({
-              to: u.email,
+              to: [u.email, u.contactEmail].filter(Boolean).join(','),
               name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
               type: accessType,
               date: new Date(),
@@ -505,7 +506,7 @@ router.post(
           recordAttempt(pass, 'STATE_DENY', reason);
           if (u.role === 'USER' && u.institutionalType && u.email) {
             sendAccessNotificationEmail({
-              to: u.email,
+              to: [u.email, u.contactEmail].filter(Boolean).join(','),
               name: u.name || [u.firstName, u.lastNameP, u.lastNameM].filter(Boolean).join(' '),
               type: accessType,
               date: new Date(),
@@ -877,13 +878,14 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
             role: true,
             name: true,
             boleta: true,
+            email: true,
+            contactEmail: true,
             firstName: true,
             lastNameP: true,
             lastNameM: true,
-            email: true,
-            photoUrl: true,
             accessState: true,
             institutionalType: true,
+            photoUrl: true,
           },
         },
         guest: {

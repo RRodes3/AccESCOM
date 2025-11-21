@@ -23,7 +23,6 @@ export default function AccessReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // filtros
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [subjectType, setSubjectType] = useState('');
@@ -42,7 +41,6 @@ export default function AccessReport() {
     return params.toString();
   };
 
-  // centraliza la carga con manejo de loading/error
   async function fetchData() {
     setLoading(true);
     setError('');
@@ -64,7 +62,6 @@ export default function AccessReport() {
     fetchData();
   }, [from, to, subjectType, institutionalType, accessType, result]);
 
-  // crea una vista "pretty" para la tabla (no elimina rows ni funciones previas)
   const prettyRows = useMemo(
     () =>
       rows.map((row) => {
@@ -77,15 +74,10 @@ export default function AccessReport() {
               .filter(Boolean)
               .join(' ') || row.user?.name || '—';
 
-        // ← TRADUCCIÓN DE ACCIÓN con ISSUE → "Código generado"
         let accion = row.action;
-        if (accion === 'VALIDATE_ALLOW') {
-          accion = 'Permitido';
-        } else if (accion === 'VALIDATE_DENY') {
-          accion = 'Denegado';
-        } else if (accion === 'ISSUE') {
-          accion = 'Código generado';
-        }
+        if (accion === 'VALIDATE_ALLOW') accion = 'Permitido';
+        else if (accion === 'VALIDATE_DENY') accion = 'Denegado';
+        else if (accion === 'ISSUE') accion = 'Código generado';
 
         return {
           id: row.id,
@@ -105,6 +97,7 @@ export default function AccessReport() {
               : '—',
           boleta: row.user?.boleta || '—',
           email: row.user?.email || '—',
+          contactEmail: row.user?.contactEmail || '—',
           curp: row.guest?.curp || '—',
           reason: row.guest?.reason || row.reason || '—',
           guard: row.guard?.name || '—',
@@ -113,7 +106,6 @@ export default function AccessReport() {
     [rows]
   );
 
-  /* ------------ Exportar CSV en el navegador ------------ */
   const exportCSV = () => {
     if (!prettyRows.length) {
       alert('No hay datos para exportar');
@@ -129,6 +121,7 @@ export default function AccessReport() {
       'Sub-rol',
       'Boleta',
       'Email',
+      'Correo contacto',
       'CURP',
       'Motivo',
       'Guardia',
@@ -146,6 +139,7 @@ export default function AccessReport() {
         r.subRol || '',
         r.boleta || '',
         r.email || '',
+        r.contactEmail || '',
         r.curp || '',
         r.reason || '',
         r.guard || '',
@@ -176,7 +170,6 @@ export default function AccessReport() {
     URL.revokeObjectURL(url);
   };
 
-  /* ------------ Exportar "PDF" via print() ------------ */
   const exportPDF = () => {
     if (!prettyRows.length) {
       alert('No hay datos para exportar');
@@ -211,6 +204,7 @@ export default function AccessReport() {
                 <th>Sub-rol</th>
                 <th>Boleta</th>
                 <th>Email</th>
+                <th>Correo contacto</th>
                 <th>CURP</th>
                 <th>Motivo</th>
                 <th>Guardia</th>
@@ -229,6 +223,7 @@ export default function AccessReport() {
                   <td>${r.subRol || ''}</td>
                   <td>${r.boleta || ''}</td>
                   <td>${r.email || ''}</td>
+                  <td>${r.contactEmail || ''}</td>
                   <td>${r.curp || ''}</td>
                   <td>${r.reason || ''}</td>
                   <td>${r.guard || ''}</td>
@@ -247,10 +242,8 @@ export default function AccessReport() {
     win.document.close();
   };
 
-  // --- JSX ---
   return (
     <div className="container mt-3">
-      {/* filtros */}
       <div className="row g-2 align-items-end">
         <div className="col-auto">
           <label className="form-label">Desde</label>
@@ -349,6 +342,7 @@ export default function AccessReport() {
               <th>Guardia</th>
               <th>Boleta</th>
               <th>Email</th>
+              <th>Correo contacto</th>
               <th>CURP</th>
               <th>Motivo Visita</th>
             </tr>
@@ -365,34 +359,28 @@ export default function AccessReport() {
                 <td>
                   {r.curp !== '—' || r.reason !== '—' ? (
                     <>
-                      <div>
-                        <b>CURP:</b> {r.curp}
-                      </div>
-                      <div>
-                        <b>Motivo:</b> {r.reason}
-                      </div>
+                      <div><b>CURP:</b> {r.curp}</div>
+                      <div><b>Motivo:</b> {r.reason}</div>
                     </>
                   ) : (
                     <>
-                      <div>
-                        <b>Boleta:</b> {r.boleta}
-                      </div>
-                      <div>
-                        <b>Email:</b> {r.email}
-                      </div>
+                      <div><b>Boleta:</b> {r.boleta}</div>
+                      <div><b>Email:</b> {r.email}</div>
+                      <div><b>Contacto:</b> {r.contactEmail}</div>
                     </>
                   )}
                 </td>
                 <td>{r.guard}</td>
                 <td>{r.boleta}</td>
                 <td>{r.email}</td>
+                <td>{r.contactEmail}</td>
                 <td>{r.curp}</td>
                 <td>{r.reason}</td>
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={12} className="text-center text-muted">
+                <td colSpan={13} className="text-center text-muted">
                   Sin registros
                 </td>
               </tr>

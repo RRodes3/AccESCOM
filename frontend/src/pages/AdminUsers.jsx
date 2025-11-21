@@ -17,30 +17,26 @@ const RE_BOLETA    = /^\d{10}$/;
 const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
-const isInstitutional = (email) => RE_EMAIL_DOT.test((email || '').trim().toLowerCase()) || RE_EMAIL_COMPACT.test((email || '').trim().toLowerCase());
+const isInstitutional = (email) =>
+  RE_EMAIL_DOT.test((email || '').trim().toLowerCase()) ||
+  RE_EMAIL_COMPACT.test((email || '').trim().toLowerCase());
 
-const translateRole = (role) => {
-  const translations = {
-    'ADMIN': 'Administrador',
-    'GUARD': 'Guardia',
-    'USER': 'Usuario Institucional'
-  };
-  return translations[role] || role;
-};
+const translateRole = (role) => ({
+  ADMIN: 'Administrador',
+  GUARD: 'Guardia',
+  USER: 'Usuario Institucional'
+}[role] || role);
 
-const translateInstitutionalType = (type) => {
-  const translations = {
-    'STUDENT': 'Estudiante',
-    'TEACHER': 'Profesor',
-    'PAE': 'PAE'
-  };
-  return translations[type] || type;
-};
+const translateInstitutionalType = (type) => ({
+  STUDENT: 'Estudiante',
+  TEACHER: 'Profesor',
+  PAE: 'PAE'
+}[type] || type);
 
 export default function AdminUsers() {
   const [form, setForm] = useState({
     boleta: '', firstName: '', lastNameP: '', lastNameM: '',
-    email: '', password: '', role: 'GUARD', institutionalType: ''
+    email: '', contactEmail: '', password: '', role: 'GUARD', institutionalType: ''
   });
   const [errors, setErrors] = useState({});
   const [msg, setMsg] = useState('');
@@ -58,10 +54,9 @@ export default function AdminUsers() {
   const [guests, setGuests] = useState([]);
   const [gTotal, setGTotal] = useState(0);
 
-  // Estado del modal: '' = sin selección, 'soft' | 'anonymize' | 'hard' = mostrando confirmación
   const [modalOpen, setModalOpen] = useState(false);
   const [modalUser, setModalUser] = useState(null);
-  const [modalMode, setModalMode] = useState(''); // '' = mostrando botones, 'soft'/'anonymize'/'hard' = mostrando confirmación
+  const [modalMode, setModalMode] = useState('');
   const [modalConfirm, setModalConfirm] = useState(false);
   const [selected, setSelected] = useState([]);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -84,13 +79,13 @@ export default function AdminUsers() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await listUsers({ 
-        query, 
-        role, 
+      const { data } = await listUsers({
+        query,
+        role,
         institutionalType,
-        take, 
-        skip, 
-        includeInactive 
+        take,
+        skip,
+        includeInactive
       });
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -101,9 +96,9 @@ export default function AdminUsers() {
       setLoading(false);
     }
   };
-  useEffect(() => { 
-    load(); 
-    /* eslint-disable-next-line */ 
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
   }, [query, role, institutionalType, skip, includeInactive]);
   useEffect(() => {
     api.get('/admin/guests?take=100&skip=0')
@@ -115,17 +110,19 @@ export default function AdminUsers() {
   }, []);
 
   useEffect(() => {
-    if (modalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (modalOpen) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = '';
     return () => { document.body.style.overflow = ''; };
   }, [modalOpen]);
 
   const onChange = (e) => {
     const { name, value } = e.target;
-    setForm(f => ({ ...f, [name]: name === 'boleta' ? value.replace(/\D/g, '').slice(0,10) : value }));
+    setForm(f => ({
+      ...f,
+      [name]: name === 'boleta'
+        ? value.replace(/\D/g, '').slice(0,10)
+        : value
+    }));
   };
 
   const submit = async (e) => {
@@ -138,20 +135,23 @@ export default function AdminUsers() {
     setSending(true);
     try {
       const payload = {
-         boleta: form.boleta,
-         firstName: form.firstName.trim(),
-         lastNameP: form.lastNameP.trim(),
-         lastNameM: form.lastNameM.trim(),
-         email: form.email.trim().toLowerCase(),
-         password: form.password,
-         role: form.role,
-         ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {}),
-         ...(form.role === 'GUARD' && form.overrideGuard ? { overrideGuard: true } : {})
-       };
+        boleta: form.boleta,
+        firstName: form.firstName.trim(),
+        lastNameP: form.lastNameP.trim(),
+        lastNameM: form.lastNameM.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        role: form.role,
+        ...(form.role === 'USER' && form.institutionalType ? { institutionalType: form.institutionalType } : {}),
+        ...(form.role === 'GUARD' && form.overrideGuard ? { overrideGuard: true } : {}),
+        ...(form.role !== 'GUARD' && form.contactEmail
+            ? { contactEmail: form.contactEmail.trim().toLowerCase() }
+            : {})
+      };
       await createUser(payload);
-      setForm({ 
-        boleta:'', firstName:'', lastNameP:'', lastNameM:'', 
-        email:'', password:'', role:'GUARD', institutionalType: ''
+      setForm({
+        boleta:'', firstName:'', lastNameP:'', lastNameM:'',
+        email:'', contactEmail:'', password:'', role:'GUARD', institutionalType: ''
       });
       setSkip(0);
       await load();
@@ -177,11 +177,10 @@ export default function AdminUsers() {
 
   const openModalFor = (user) => {
     setModalUser(user);
-    setModalMode(''); // Sin selección inicial
+    setModalMode('');
     setModalConfirm(false);
     setModalOpen(true);
   };
-
   const closeModal = () => {
     setModalOpen(false);
     setModalUser(null);
@@ -242,7 +241,6 @@ export default function AdminUsers() {
   const pages = Math.ceil(total / take) || 1;
   const page = Math.floor(skip / take) + 1;
 
-  // --- Render ---
   return (
     <div className="container mt-3">
       <h3>Administración de usuarios</h3>
@@ -252,7 +250,6 @@ export default function AdminUsers() {
         </Link>
       </div>
 
-      {/* Filtros */}
       <div className="row g-2 align-items-end">
         <div className="col-md-4">
           <label className="form-label">Buscar (nombre, boleta, correo)</label>
@@ -269,9 +266,9 @@ export default function AdminUsers() {
         </div>
         <div className="col-md-3">
           <label className="form-label">Sub-rol</label>
-          <select 
-            className="form-select" 
-            value={institutionalType} 
+          <select
+            className="form-select"
+            value={institutionalType}
             onChange={e => { setSkip(0); setInstitutionalType(e.target.value); }}
           >
             <option value="">Todos</option>
@@ -294,13 +291,13 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* ↓ MENSAJE INFORMATIVO MOVIDO AQUÍ */}
       <div className="alert alert-secondary small mt-3">
         <strong>Acciones sobre usuarios:</strong><br />
         <span className="badge bg-warning text-dark me-1">Desactivar</span> Deshabilita temporalmente (reversible).<br />
         <span className="badge bg-info text-dark me-1">Anonimizar</span> Borra datos personales y deja un registro neutro (irreversible).<br />
         <span className="badge bg-danger me-1">Eliminar definitivo</span> Borra el registro por completo (irreversible).
       </div>
+
       {selected.length > 0 && (
         <div className="alert alert-primary d-flex justify-content-between align-items-center">
           <div>
@@ -317,7 +314,6 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Tabla */}
       <div className="table-responsive mt-3">
         <table className="table table-sm table-striped align-middle">
           <thead>
@@ -335,6 +331,7 @@ export default function AdminUsers() {
               <th>Boleta</th>
               <th>Nombre</th>
               <th>Correo</th>
+              <th>Correo contacto</th>
               <th>Rol</th>
               <th>Sub-rol</th>
               <th>Estado</th>
@@ -345,9 +342,9 @@ export default function AdminUsers() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10}>Cargando…</td></tr>
+              <tr><td colSpan={11}>Cargando…</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={10}>Sin resultados</td></tr>
+              <tr><td colSpan={11}>Sin resultados</td></tr>
             ) : items.map(u => (
               <tr key={u.id}>
                 <td>
@@ -362,6 +359,7 @@ export default function AdminUsers() {
                 <td>{u.boleta}</td>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
+                <td>{u.contactEmail || <span className="text-muted">—</span>}</td>
                 <td>{translateRole(u.role)}</td>
                 <td>{u.institutionalType ? translateInstitutionalType(u.institutionalType) : '-'}</td>
                 <td>
@@ -411,7 +409,6 @@ export default function AdminUsers() {
         </table>
       </div>
 
-      {/* Paginación */}
       <div className="d-flex justify-content-between align-items-center">
         <div>Página {page} de {pages}</div>
         <div className="btn-group">
@@ -424,7 +421,6 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* Alta de usuario */}
       <div className="rounded-3 text-white text-center fw-bold py-2 mt-4" style={{ background: '#5bbcff' }}>
         Alta de usuario
       </div>
@@ -467,6 +463,19 @@ export default function AdminUsers() {
                    placeholder="ej. usuario@alumno.ipn.mx" />
             {errors.email && <div className="invalid-feedback d-block">{errors.email}</div>}
           </div>
+          {form.role !== 'GUARD' && (
+            <div className="col-md-5">
+              <label className="form-label">Correo de contacto (opcional)</label>
+              <input
+                name="contactEmail"
+                type="email"
+                className="form-control"
+                value={form.contactEmail}
+                onChange={onChange}
+                placeholder="ej. usuario@gmail.com"
+              />
+            </div>
+          )}
           <div className="col-md-3">
             <label className="form-label">Rol</label>
             <select name="role"
@@ -477,19 +486,19 @@ export default function AdminUsers() {
               <option value="USER">Usuario Institucional</option>
             </select>
             {errors.role && <div className="invalid-feedback d-block">{errors.role}</div>}
-           {form.role === 'GUARD' && (
-             <div className="form-check mt-2">
-               <input
-                 type="checkbox"
-                 className="form-check-input"
-                 checked={!!form.overrideGuard}
-                 onChange={e => setForm(f => ({ ...f, overrideGuard: e.target.checked }))}
-               />
-               <label className="form-check-label small">
-                 Sobrescribir guardia existente (mismo correo)
-               </label>
-             </div>
-           )}
+            {form.role === 'GUARD' && (
+              <div className="form-check mt-2">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={!!form.overrideGuard}
+                  onChange={e => setForm(f => ({ ...f, overrideGuard: e.target.checked }))}
+                />
+                <label className="form-check-label small">
+                  Sobrescribir guardia existente (mismo correo)
+                </label>
+              </div>
+            )}
           </div>
           <div className="col-md-3">
             <label className="form-label">Sub-rol institucional</label>
@@ -537,7 +546,7 @@ export default function AdminUsers() {
             {guests.map(g => (
               <tr key={g.id}>
                 <td>{[g.firstName, g.lastNameP, g.lastNameM].filter(Boolean).join(' ')}</td>
-                <td>{g.curp}</td> 
+                <td>{g.curp}</td>
                 <td>{g.reason}</td>
                 <td>{g.state}</td>
                 <td>{new Date(g.createdAt).toLocaleString()}</td>
@@ -551,7 +560,6 @@ export default function AdminUsers() {
         </table>
       </div>
 
-      {/* Modal de acciones sobre usuario */}
       {modalOpen && modalUser && (
         <>
           <div className="modal fade show" style={{ display: 'block', background: 'rgba(0,0,0,0.5)' }} onClick={closeModal}>
@@ -562,13 +570,14 @@ export default function AdminUsers() {
                   <button type="button" className="btn-close" onClick={closeModal} />
                 </div>
                 <div className="modal-body">
-                  
-
                   <div className="mb-3 p-3 bg-light rounded">
                     <strong>Usuario seleccionado:</strong><br />
                     <code>{modalUser.email}</code><br />
                     <small className="text-muted">
                       Nombre: {modalUser.name || '—'} | Boleta: {modalUser.boleta || '—'} | Rol: {translateRole(modalUser.role)} | Sub-rol: {modalUser.institutionalType ? translateInstitutionalType(modalUser.institutionalType) : '—'}
+                    </small><br />
+                    <small className="text-muted">
+                      Correo contacto: {modalUser.contactEmail || '—'}
                     </small>
                   </div>
 
@@ -595,7 +604,7 @@ export default function AdminUsers() {
                           <div>
                             <strong>Anonimizar</strong>
                             <br />
-                            <small>Borra datos personales (nombre, apellidos, boleta, foto, email real). Deja un registro neutro.</small>
+                            <small>Borra datos personales (incluye correos, nombre, boleta y foto).</small>
                           </div>
                           <span className="badge bg-dark">Irreversible</span>
                         </button>
@@ -632,19 +641,17 @@ export default function AdminUsers() {
 
                       {modalMode === 'hard' && (
                         <div className="alert alert-danger py-2 small mb-3">
-                          <strong>⚠️ Advertencia:</strong> Esta acción eliminará el usuario permanentemente. Los registros de acceso permanecerán pero sin referencia (userId NULL).
+                          <strong>⚠️ Advertencia:</strong> Acción permanente. Los logs conservarán userId NULL.
                         </div>
                       )}
-
                       {modalMode === 'anonymize' && (
                         <div className="alert alert-info py-2 small mb-3">
-                          <strong>ℹ️ Nota:</strong> Al anonimizar se reemplaza correo por uno artificial y se borran nombres, boleta y foto. El registro permanece en la base de datos como <code>[ELIMINADO]</code>.
+                          <strong>ℹ️ Nota:</strong> Se reemplazan todos los datos personales por un marcador neutro.
                         </div>
                       )}
-
                       {modalMode === 'soft' && (
                         <div className="alert alert-warning py-2 small mb-3">
-                          <strong>ℹ️ Nota:</strong> Podrás reactivar al usuario posteriormente desde la lista usando el botón "Reactivar".
+                          <strong>ℹ️ Nota:</strong> Podrás reactivar al usuario con el botón "Reactivar".
                         </div>
                       )}
 
@@ -664,7 +671,6 @@ export default function AdminUsers() {
                       </div>
                     </>
                   )}
-
                 </div>
                 <div className="modal-footer">
                   <button
@@ -697,7 +703,6 @@ export default function AdminUsers() {
         </>
       )}
 
-      {/* Modal de acciones masivas */}
       {bulkModalOpen && (
         <div className="modal fade show" style={{ display:'block', background:'rgba(0,0,0,0.5)' }} onClick={() => setBulkModalOpen(false)}>
           <div className="modal-dialog modal-lg modal-dialog-centered" onClick={e => e.stopPropagation()}>

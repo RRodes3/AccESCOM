@@ -4,7 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const auth = require('../middleware/auth');        // ajusta ruta si difiere
+const auth = require('../middleware/auth');
 const { cookieOptions } = require('../utils/cookies');
 const axios = require('axios');
 const { transporter, sendPasswordResetEmail } = require('../utils/mailer');
@@ -14,18 +14,18 @@ const RE_BOLETA    = /^\d{10}$/;
 const RE_PASSWORD  = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const RE_EMAIL_DOT     = /^[a-z]+(?:\.[a-z]+)+@(?:alumno\.)?ipn\.mx$/i;
 const RE_EMAIL_COMPACT = /^[a-z]{1,6}[a-z]+[a-z]?\d{0,6}@(?:alumno\.)?ipn\.mx$/i;
+const RE_EMAIL_GENERIC = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const SECRET = process.env.JWT_SECRET || 'dev-secret';
 
-// === Rate limiting (simple, en memoria) ===
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;  // 15 min
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 
-const FORGOT_WINDOW_MS = 30 * 60 * 1000; // 30 min
+const FORGOT_WINDOW_MS = 30 * 60 * 1000;
 const FORGOT_MAX_ATTEMPTS = 3;
 
-const loginAttemptsMap = new Map();   // key -> { count, firstAt }
-const forgotAttemptsMap = new Map();  // key -> { count, firstAt }
+const loginAttemptsMap = new Map();
+const forgotAttemptsMap = new Map();
 
 const isInstitutional = (email = '') =>
   RE_EMAIL_DOT.test(email.trim()) || RE_EMAIL_COMPACT.test(email.trim());
@@ -42,7 +42,6 @@ const buildFullName = (firstName, lastNameP, lastNameM) => {
 
 const prisma = new PrismaClient();
 
-// ==== Helpers de rate limiting ====
 function getClientIp(req) {
   return (
     req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
@@ -59,13 +58,10 @@ function isBlocked(map, key, windowMs, maxAttempts) {
   const now = Date.now();
   const entry = map.get(key);
   if (!entry) return false;
-
   if (now - entry.firstAt > windowMs) {
-    // Ventana expirada → reiniciar conteo
     map.delete(key);
     return false;
   }
-
   return entry.count >= maxAttempts;
 }
 
@@ -83,7 +79,6 @@ function resetAttempts(map, key) {
   map.delete(key);
 }
 
-// Wrappers específicos
 function isLoginRateLimited(ip, email) {
   const key = makeRateKey(ip, email);
   return isBlocked(loginAttemptsMap, key, LOGIN_WINDOW_MS, LOGIN_MAX_ATTEMPTS);
@@ -109,21 +104,23 @@ function registerForgotAttempt(ip, email) {
   registerFailure(forgotAttemptsMap, key, FORGOT_WINDOW_MS);
 }
 
-/* ---------- REGISTER ---------- */
+/* REGISTER */
 router.post('/register', async (req, res) => {
   try {
     let {
       boleta, firstName, lastNameP, lastNameM,
       name, email, password,
-      institutionalType
+      institutionalType,
+      contactEmail
     } = req.body || {};
 
-    boleta     = (boleta || '').trim();
-    firstName  = sanitizeName(firstName);
-    lastNameP  = sanitizeName(lastNameP);
-    lastNameM  = sanitizeName(lastNameM);
-    email      = String(email || '').trim().toLowerCase();
-    password   = String(password || '');
+    boleta       = (boleta || '').trim();
+    firstName    = sanitizeName(firstName);
+    lastNameP    = sanitizeName(lastNameP);
+    lastNameM    = sanitizeName(lastNameM);
+    email        = String(email || '').trim().toLowerCase();
+    contactEmail = contactEmail ? String(contactEmail).trim().toLowerCase() : null;
+    password     = String(password || '');
 
     const INSTITUTIONAL_TYPES = ['STUDENT','TEACHER','PAE'];
     if (institutionalType && !INSTITUTIONAL_TYPES.includes(String(institutionalType))) {
@@ -132,14 +129,15 @@ router.post('/register', async (req, res) => {
 
     const errors = {};
     if (!RE_BOLETA.test(boleta)) errors.boleta = 'La boleta debe tener exactamente 10 dígitos.';
-    if (!firstName)              errors.firstName = 'El nombre es obligatorio.';
+    if (!firstName) errors.firstName = 'El nombre es obligatorio.';
     else if (!RE_LETTERS.test(firstName)) errors.firstName = 'Usa solo letras y espacios.';
-    if (!lastNameP)              errors.lastNameP = 'El apellido paterno es obligatorio.';
+    if (!lastNameP) errors.lastNameP = 'El apellido paterno es obligatorio.';
     else if (!RE_LETTERS.test(lastNameP)) errors.lastNameP = 'Usa solo letras y espacios.';
-    if (!lastNameM)              errors.lastNameM = 'El apellido materno es obligatorio.';
+    if (!lastNameM) errors.lastNameM = 'El apellido materno es obligatorio.';
     else if (!RE_LETTERS.test(lastNameM)) errors.lastNameM = 'Usa solo letras y espacios.';
-    if (!email)                  errors.email = 'El correo es obligatorio.';
+    if (!email) errors.email = 'El correo es obligatorio.';
     else if (!isInstitutional(email)) errors.email = 'Usa tu correo institucional (@ipn.mx o @alumno.ipn.mx).';
+    if (contactEmail && !RE_EMAIL_GENERIC.test(contactEmail)) errors.contactEmail = 'Correo de contacto inválido.';
     if (!RE_PASSWORD.test(password)) errors.password = 'Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.';
 
     if (Object.keys(errors).length) {
@@ -163,7 +161,7 @@ router.post('/register', async (req, res) => {
         resolvedInstitutionalType = 'TEACHER';
       }
     }
-    
+
     const created = await prisma.user.create({
       data: {
         boleta,
@@ -172,12 +170,13 @@ router.post('/register', async (req, res) => {
         lastNameM,
         name: fullName,
         email,
+        contactEmail,
         password: hash,
         role: 'USER',
         institutionalType: resolvedInstitutionalType,
       },
       select: {
-        id: true, name: true, email: true, role: true, boleta: true,
+        id: true, name: true, email: true, contactEmail: true, role: true, boleta: true,
         firstName: true, lastNameP: true, lastNameM: true, institutionalType: true
       }
     });
@@ -189,15 +188,13 @@ router.post('/register', async (req, res) => {
   }
 });
 
-
-// ====== LOGIN con Super Admin + reCAPTCHA v3 + rate limit ======
+/* LOGIN */
 router.post('/login', async (req, res) => {
   try {
     const { email, password, captcha } = req.body;
     const ip = getClientIp(req);
     const normEmail = String(email || '').trim().toLowerCase();
 
-    // Rate limit por IP+email
     if (isLoginRateLimited(ip, normEmail)) {
       return res.status(429).json({
         error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo más tarde.'
@@ -236,6 +233,7 @@ router.post('/login', async (req, res) => {
       select: {
         id: true,
         email: true,
+        contactEmail: true,
         role: true,
         name: true,
         firstName: true,
@@ -251,13 +249,11 @@ router.post('/login', async (req, res) => {
     });
 
     if (!user) {
-      // registra intento fallido
       registerLoginFailure(ip, normEmail);
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     }
 
     if (!user.isActive) {
-      // también lo consideramos intento fallido para bloqueo
       registerLoginFailure(ip, normEmail);
       return res
         .status(403)
@@ -270,7 +266,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales incorrectas' });
     }
 
-    // Login exitoso → resetear intentos
     resetLoginAttempts(ip, normEmail);
 
     await prisma.user.update({
@@ -288,7 +283,6 @@ router.post('/login', async (req, res) => {
     });
 
     const { password: _pw, ...sanitized } = user;
-
     return res.json({ user: sanitized });
   } catch (e) {
     console.error('Login error:', e);
@@ -296,24 +290,19 @@ router.post('/login', async (req, res) => {
   }
 });
 
-
-/* ---------- LOGOUT ---------- */
+/* LOGOUT */
 router.post('/logout', (req, res) => {
   res
     .clearCookie('token', { ...cookieOptions, maxAge: 0 })
     .json({ ok: true });
 });
 
-
-/* ---------- ME ---------- */
+/* ME */
 router.get('/me', auth, (req, res) => {
   res.json({ user: req.user });
 });
 
-
-/* ---------- Contraseña olvidada (RESET) ---------- */
-
-// POST /api/auth/forgot-password (rate limit + token hasheado)
+/* FORGOT PASSWORD */
 router.post('/forgot-password', async (req, res) => {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -355,17 +344,15 @@ router.post('/forgot-password', async (req, res) => {
 
       const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
       const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
-      console.log('🔗 resetUrl generado:', resetUrl);
-      console.log('📬 Enviando a:', user.email);
 
       try {
-        await sendPasswordResetEmail({ to: user.email, name: user.name, resetUrl });
+        const recipients = [user.email, user.contactEmail].filter(Boolean).join(',');
+        await sendPasswordResetEmail({ to: recipients, name: user.name, resetUrl });
       } catch (mailErr) {
         console.error('EMAIL SEND ERROR:', mailErr?.response || mailErr);
       }
     }
 
-    // Cuenta como intento (exista o no el usuario)
     registerForgotAttempt(ip, email);
 
     return res.json({ ok: true, message: 'Si el correo existe, enviaremos un enlace para restablecer.' });
@@ -375,8 +362,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-
-// POST /api/auth/reset-password
+/* RESET PASSWORD */
 router.post('/reset-password', async (req, res) => {
   try {
     const rawToken = String(req.body?.token || '').trim();
@@ -418,8 +404,7 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
-
-// POST /api/auth/change-password
+/* CHANGE PASSWORD */
 router.post('/change-password', auth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
