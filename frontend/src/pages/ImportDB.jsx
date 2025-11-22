@@ -108,7 +108,7 @@ export default function ImportDB() {
     try {
       setLoading(true);
 
-      // Fotos (siempre directo)
+      // Importación directa para fotos (dentro de handleSubmit)
       if (mode === "photos") {
         const formData = new FormData();
         formData.append("file", file);
@@ -117,22 +117,40 @@ export default function ImportDB() {
         });
 
         if (data.ok) {
-          setStatus(
-            `Fotos importadas: ${data.processed}. ` +
-              (data.notMatched?.length
-                ? `Sin usuario para: ${data.notMatched
-                    .slice(0, 10)
-                    .join(", ")}${data.notMatched.length > 10 ? "..." : ""}. `
-                : "") +
-              (data.skipped?.length
-                ? `Archivos ignorados: ${data.skipped.length}.`
-                : "")
-          );
-          setPhotosResult(data);
+          // Para ZIP (respuesta con stats)
+          if (data.stats) {
+            const { processed, updated, skippedNoUser, errors } = data.stats;
+            setStatus(
+              `✅ Fotos procesadas: ${processed || 0} asociadas exitosamente. ` +
+                (skippedNoUser > 0
+                  ? `⚠️ ${skippedNoUser} sin usuario coincidente. `
+                  : "") +
+                (errors > 0 ? `❌ ${errors} errores al procesar.` : "")
+            );
+            setPhotosResult({
+              ok: true,
+              processed: processed || 0,
+              notMatched: [], // Backend no devuelve lista detallada, solo contador
+              skipped: [],
+              stats: data.stats,
+            });
+          }
+          // Para imagen individual
+          else {
+            setStatus(`✅ ${data.message || "Foto importada correctamente"}`);
+            setPhotosResult({
+              ok: true,
+              processed: 1,
+              message: data.message,
+              photoUrl: data.photoUrl,
+            });
+          }
+
           setImportResult(null);
           setValidationResult(null);
         } else {
           setStatus(data.error || "Error al importar fotos");
+          setPhotosResult({ ok: false, error: data.error });
         }
         return;
       }
@@ -768,62 +786,56 @@ export default function ImportDB() {
               <div className="col-md-4">
                 <div className="p-3 bg-info bg-opacity-10 rounded text-center">
                   <h3 className="mb-0 text-info">
-                    {photosResult.processed || 0}
+                    {photosResult.processed || photosResult.stats?.processed || 0}
                   </h3>
                   <small className="text-muted">Fotos asociadas</small>
                 </div>
               </div>
               <div className="col-md-4">
-                <div className="p-3 bg-light rounded text-center">
-                  <h3 className="mb-0">
-                    {(photosResult.notMatched?.length || 0) +
-                      (photosResult.skipped?.length || 0)}
+                <div className="p-3 bg-warning bg-opacity-10 rounded text-center">
+                  <h3 className="mb-0 text-warning">
+                    {photosResult.stats?.skippedNoUser || 0}
                   </h3>
-                  <small className="text-muted">Sin usar / omitidas</small>
+                  <small className="text-muted">Sin usuario</small>
                 </div>
               </div>
               <div className="col-md-4">
-                <div className="p-3 bg-success bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-success">
-                    {(photosResult?.processed || 0) +
-                      (photosResult?.skipped?.length || 0)}
+                <div className="p-3 bg-danger bg-opacity-10 rounded text-center">
+                  <h3 className="mb-0 text-danger">
+                    {photosResult.stats?.errors || 0}
                   </h3>
-                  <small className="text-muted">Total archivos</small>
+                  <small className="text-muted">Errores</small>
                 </div>
               </div>
             </div>
 
-            {photosResult.notMatched?.length > 0 && (
+            {/* Advertencia si hay fotos sin usuario */}
+            {photosResult.stats?.skippedNoUser > 0 && (
               <div className="alert alert-warning">
-                <h6 className="alert-heading">⚠️ Boletas sin coincidencia:</h6>
-                <ul className="mb-0 small">
-                  {photosResult.notMatched.slice(0, 30).map((fn, idx) => (
-                    <li key={idx}>{fn}</li>
-                  ))}
-                </ul>
-                {photosResult.notMatched.length > 30 && (
-                  <small className="text-muted">
-                    ... {photosResult.notMatched.length - 30} más
-                  </small>
-                )}
+                <h6 className="alert-heading">⚠️ Fotos sin coincidencia:</h6>
+                <p className="mb-0">
+                  {photosResult.stats.skippedNoUser} fotos no pudieron asociarse porque
+                  la boleta no existe en la base de datos.
+                </p>
               </div>
             )}
 
-            {photosResult.skipped?.length > 0 && (
-              <div className="alert alert-secondary">
-                <h6 className="alert-heading">🚫 Omitidas:</h6>
-                <ul className="mb-0 small">
-                  {photosResult.skipped.slice(0, 30).map((s, idx) => (
-                    <li key={idx}>
-                      {s.filename}: {s.reason}
-                    </li>
-                  ))}
-                </ul>
-                {photosResult.skipped.length > 30 && (
-                  <small className="text-muted">
-                    ... {photosResult.skipped.length - 30} más
-                  </small>
-                )}
+            {/* Errores al procesar */}
+            {photosResult.stats?.errors > 0 && (
+              <div className="alert alert-danger">
+                <h6 className="alert-heading">❌ Errores:</h6>
+                <p className="mb-0">
+                  {photosResult.stats.errors} fotos fallaron al procesar.
+                  Revisa los logs del servidor para más detalles.
+                </p>
+              </div>
+            )}
+
+            {/* Éxito individual */}
+            {photosResult.photoUrl && (
+              <div className="alert alert-success">
+                <h6 className="alert-heading">✅ Foto subida exitosamente</h6>
+                <p className="mb-0">URL: <code className="small">{photosResult.photoUrl}</code></p>
               </div>
             )}
 
