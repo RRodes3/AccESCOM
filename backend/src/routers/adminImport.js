@@ -410,9 +410,9 @@ router.post(
   }
 );
 
-// ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import ────────
+// ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import/zip ────────
 router.post(
-  '/import/:type',
+  '/:type',  // ← CAMBIO: antes era '/import/:type'
   auth,
   requireRole(['ADMIN']),
   uploadDisk.single('file'),
@@ -444,7 +444,7 @@ router.post(
             response = await importUsersWithPhotosReal(file.path, { conflictAction });
         }
       } else {
-        // CSV “suave” existente (sin fotos) — opcional: podrías también extender a dryRun si no lo tienes.
+        // CSV "suave" existente (sin fotos) — opcional: podrías también extender a dryRun si no lo tienes.
         const { importCSV } = require('../../scripts/importCSV');
         response = await importCSV(file.path);
       }
