@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 
-export default function ProtectedRoute({ children, requiredRole }) {
+export default function ProtectedRoute({ children, roles }) {
   const [loading, setLoading] = useState(true);
   const [isValid, setIsValid] = useState(false);
 
@@ -15,13 +15,16 @@ export default function ProtectedRoute({ children, requiredRole }) {
         // Actualizar localStorage con datos frescos del servidor
         localStorage.setItem('user', JSON.stringify(data.user));
 
-        // Validar rol si es requerido
-        if (requiredRole && data.user.role !== requiredRole) {
-          console.warn(`Rol requerido: ${requiredRole}, rol actual: ${data.user.role}`);
-          setIsValid(false);
-        } else {
-          setIsValid(true);
+        // Validar roles si es requerido
+        if (roles && roles.length > 0) {
+          if (!roles.includes(data.user.role)) {
+            console.warn(`Roles permitidos: ${roles.join(', ')}, rol actual: ${data.user.role}`);
+            setIsValid(false);
+            return;
+          }
         }
+
+        setIsValid(true);
       } catch (error) {
         console.error('Error validando sesión:', error);
         // Si falla (usuario eliminado, sesión expirada, etc.), limpiar
@@ -33,7 +36,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
     }
 
     validateSession();
-  }, [requiredRole]);
+  }, [roles]);
 
   if (loading) {
     return (
