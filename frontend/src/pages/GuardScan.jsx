@@ -158,7 +158,7 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
             )}
 
             {/* Foto si la hay */}
-            <div className="d-flex justify-content-center mt-3">
+            <div className="d-flex flex-column align-items-center mt-3">
               <div
                 style={{
                   width: 160,
@@ -177,11 +177,15 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
                     alt="Foto del usuario"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     onError={(e) => {
-                      console.error('Error cargando foto:', photoSrc);
+                      console.error('Error cargando foto en escaneo:', photoSrc);
+                      console.error('Owner data:', owner);
                       e.target.style.display = 'none';
                       e.target.parentElement.innerHTML = `<span style="font-size: 3rem; color: #333; font-weight: bold;">${
                         (owner.firstName?.[0] || owner.name?.[0] || 'U').toUpperCase()
                       }</span>`;
+                    }}
+                    onLoad={() => {
+                      console.log('✅ Foto cargada correctamente:', photoSrc);
                     }}
                   />
                 ) : (
