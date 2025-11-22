@@ -2,10 +2,15 @@
 import express from 'express';
 import auth from '../middleware/auth.js';
 import requireRole from '../middleware/requireRole.js';
-import prisma from '../prisma/index.js'; // o '../prisma.js' según tengas el archivo
-import { sendAccessNotificationEmail } from '../utils/mailer.js';
+import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
+import mailer from '../utils/mailer.js';
 
+const { sendAccessNotificationEmail } = mailer;
+
+const prisma = new PrismaClient();
 const router = express.Router();
+
 
 /* =========================================================
    RUTA NUEVA: accesos del usuario actual (/qr/my-access)
