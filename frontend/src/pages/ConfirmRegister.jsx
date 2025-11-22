@@ -40,6 +40,7 @@ export default function ConfirmRegister() {
         lastNameP: form.lastNameP,
         lastNameM: form.lastNameM,
         email: form.email,
+        contactEmail: form.contactEmail, // ✅ Agregado
         password: form.password,
       });
       // listo -> a login
@@ -68,14 +69,19 @@ export default function ConfirmRegister() {
         <div className="mb-2"><b>Boleta:</b> {form.boleta}</div>
         <div className="mb-2"><b>Nombre completo:</b> {`${form.firstName} ${form.lastNameP} ${form.lastNameM}`}</div>
         <div className="mb-2"><b>Correo institucional:</b> {form.email}</div>
+        {form.contactEmail && (
+          <div className="mb-2"><b>Correo de contacto:</b> {form.contactEmail}</div>
+        )}
         <div className="mb-2"><b>Contraseña:</b> ••••••••••</div>
 
+        {msg && <div className={`alert ${ok ? 'alert-success' : 'alert-danger'} mt-3`}>{msg}</div>}
+
         <div className="d-flex gap-2 mt-3">
-          <button className="btn btn-outline-light flex-fill" onClick={() => nav('/register', { state: { form } })}>
+          <button className="btn btn-outline-light flex-fill" onClick={() => nav('/register', { state: { form } })} disabled={sending}>
             Regresar
           </button>
-          <button className="btn btn-primary flex-fill" onClick={handleConfirm}>
-            Registrar
+          <button className="btn btn-primary flex-fill" onClick={handleConfirm} disabled={sending}>
+            {sending ? 'Registrando...' : 'Registrar'}
           </button>
         </div>
       </div>
