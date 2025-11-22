@@ -151,6 +151,8 @@ export default function Navbar() {
   const toggleNav = () => setIsNavOpen((prev) => !prev);
 
   // --- JSX ---
+  const isOnProfilePage = location.pathname === '/mi-perfil';
+
   return (
     <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
       <div className="container">
@@ -287,17 +289,33 @@ export default function Navbar() {
                       </span>
                     </li>
 
-                    {/* Mi perfil - Solo para usuarios institucionales */}
+                    {/* Mi perfil + Mis QR (condicional) para usuarios institucionales */}
                     {isInstitutionalUser && (
-                      <li className="nav-item">
-                        <Link
-                          className="nav-link btn btn-sm btn-outline-light"
-                          to="/mi-perfil"
-                          style={{ pointerEvents: 'auto' }}
-                        >
-                          Mi perfil
-                        </Link>
-                      </li>
+                      <>
+                        {!isOnProfilePage && (
+                          <li className="nav-item">
+                            <Link
+                              className="nav-link btn btn-sm btn-outline-light"
+                              to="/mi-perfil"
+                              style={{ pointerEvents: 'auto' }}
+                            >
+                              Mi perfil
+                            </Link>
+                          </li>
+                        )}
+
+                        {isOnProfilePage && (
+                          <li className="nav-item">
+                            <Link
+                              className="nav-link btn btn-sm btn-outline-light"
+                              to="/qr-access"
+                              style={{ pointerEvents: 'auto' }}
+                            >
+                              Mis QR
+                            </Link>
+                          </li>
+                        )}
+                      </>
                     )}
 
                     {showChangePassword && (

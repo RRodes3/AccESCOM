@@ -119,7 +119,9 @@ router.post('/register', async (req, res) => {
     lastNameP    = sanitizeName(lastNameP);
     lastNameM    = sanitizeName(lastNameM);
     email        = String(email || '').trim().toLowerCase();
-    contactEmail = contactEmail ? String(contactEmail).trim().toLowerCase() : null;
+    contactEmail = (contactEmail && String(contactEmail).trim()) 
+      ? String(contactEmail).trim().toLowerCase() 
+      : null;
     password     = String(password || '');
 
     const INSTITUTIONAL_TYPES = ['STUDENT','TEACHER','PAE'];
@@ -456,6 +458,47 @@ router.post('/change-password', auth, async (req, res) => {
   } catch (e) {
     console.error('CHANGE PASSWORD ERROR:', e);
     return res.status(500).json({ error: 'No se pudo cambiar la contraseña.' });
+  }
+});
+
+// Actualizar correo de contacto del usuario autenticado
+router.put('/contact-email', auth, async (req, res) => {
+  try {
+    const { contactEmail } = req.body;
+    if (!contactEmail || typeof contactEmail !== 'string') {
+      return res.status(400).json({ ok: false, message: 'Correo de contacto inválido' });
+    }
+    const emailTrimmed = contactEmail.trim().toLowerCase();
+    if (!RE_EMAIL_GENERIC.test(emailTrimmed) || emailTrimmed.length > 190) {
+      return res.status(400).json({ ok: false, message: 'Formato de correo no válido' });
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { contactEmail: emailTrimmed },
+      select: {
+        id: true,
+        email: true,
+        contactEmail: true,
+        name: true,
+        firstName: true,
+        lastNameP: true,
+        lastNameM: true,
+        institutionalType: true,
+        boleta: true,
+        role: true,
+        mustChangePassword: true,
+        photoUrl: true,
+        isActive: true
+      }
+    });
+    return res.json({
+      ok: true,
+      message: 'Correo de contacto actualizado correctamente',
+      user: updated
+    });
+  } catch (err) {
+    console.error('auth/contact-email error:', err);
+    return res.status(500).json({ ok: false, message: 'Error actualizando correo de contacto' });
   }
 });
 

@@ -1,6 +1,6 @@
 // src/pages/PerfilUsuario.jsx
 import { useEffect, useState } from "react";
-import { api, getMyAccessLogs } from "../services/api";
+import { api, getMyAccessLogs, updateContactEmail } from "../services/api";
 
 // Misma lógica que usamos en GuardScan.jsx
 const API_BASE_URL = api.defaults.baseURL || "/api";
@@ -8,10 +8,25 @@ const ASSETS_BASE_URL =
   process.env.REACT_APP_ASSETS_BASE_URL ||
   API_BASE_URL.replace(/\/api\/?$/, "");
 
+// Función para traducir tipo institucional
+const translateInstitutionalType = (type) => {
+  const translations = {
+    STUDENT: 'Estudiante',
+    TEACHER: 'Profesor',
+    PAE: 'PAE'
+  };
+  return translations[type] || type || '—';
+};
+
 export default function PerfilUsuario() {
   const [user, setUser] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [contactEmailDraft, setContactEmailDraft] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [emailSuccess, setEmailSuccess] = useState('');
 
   // 🔹 1) Cargar usuario logueado
   useEffect(() => {
@@ -20,7 +35,12 @@ export default function PerfilUsuario() {
     const stored = localStorage.getItem("usuario") || localStorage.getItem("user");
     if (stored) {
       try {
-        setUser(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        setUser(parsed);
+
+        if (parsed?.contactEmail) {
+          setContactEmailDraft(parsed.contactEmail);
+        }
       } catch {
         console.warn("No se pudo parsear el usuario del localStorage");
       }
@@ -50,6 +70,50 @@ export default function PerfilUsuario() {
 
     fetchLogs();
   }, []);
+
+  const handleSaveContactEmail = async () => {
+    setEmailError('');
+    setEmailSuccess('');
+    const val = contactEmailDraft.trim();
+    if (!val) {
+      setEmailError('Ingresa un correo de contacto.');
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      const res = await updateContactEmail(val);
+      if (res.data?.ok) {
+        const updated = res.data.user;
+        setUser(prev => ({ ...prev, contactEmail: updated.contactEmail }));
+        try {
+          const stored = JSON.parse(localStorage.getItem('user') || 'null');
+          if (stored) {
+            stored.contactEmail = updated.contactEmail;
+            localStorage.setItem('user', JSON.stringify(stored));
+          }
+        } catch {}
+        setEmailSuccess('Correo actualizado.');
+        setEditingEmail(false);
+      } else {
+        setEmailError(res.data?.message || 'No se pudo actualizar.');
+      }
+    } catch (e) {
+      setEmailError(
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        'Error al actualizar.'
+      );
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleCancelEmail = () => {
+    setEmailError('');
+    setEmailSuccess('');
+    setContactEmailDraft(user.contactEmail || '');
+    setEditingEmail(false);
+  };
 
   if (!user) {
     return (
@@ -125,13 +189,57 @@ export default function PerfilUsuario() {
               <p className="mb-1">
                 <strong>Correo institucional:</strong> {user.email}
               </p>
-              <p className="mb-1">
-                <strong>Correo de contacto:</strong>{" "}
-                {user.contactEmail || "No registrado"}
+              <p className="mb-1 d-flex align-items-start">
+                <strong className="me-1">Correo de contacto:</strong>
+                {!editingEmail ? (
+                  <>
+                    <span>{user.contactEmail || 'No registrado'}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-link text-decoration-none ms-2"
+                      onClick={() => {
+                        setEditingEmail(true);
+                        setContactEmailDraft(user.contactEmail || '');
+                      }}
+                      aria-label="Editar correo de contacto"
+                    >
+                      ✏️
+                    </button>
+                  </>
+                ) : (
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="email"
+                      className="form-control form-control-sm mb-2"
+                      value={contactEmailDraft}
+                      onChange={(e) => setContactEmailDraft(e.target.value)}
+                      placeholder="correo@ejemplo.com"
+                      disabled={savingEmail}
+                    />
+                    {emailError && <div className="text-danger small mb-1">{emailError}</div>}
+                    {emailSuccess && <div className="text-success small mb-1">{emailSuccess}</div>}
+                    <div className="d-flex gap-2">
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={handleSaveContactEmail}
+                        disabled={savingEmail}
+                      >
+                        {savingEmail ? 'Guardando...' : 'Guardar'}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={handleCancelEmail}
+                        disabled={savingEmail}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </p>
               <p className="mb-1">
                 <strong>Tipo institucional:</strong>{" "}
-                {user.institutionalType || "—"}
+                {translateInstitutionalType(user.institutionalType)}
               </p>
               <p className="mb-0">
                 <strong>Estado de cuenta:</strong>{" "}
@@ -142,9 +250,18 @@ export default function PerfilUsuario() {
         </div>
       </div>
 
-      {/* Tabla de últimos accesos */}
-      <h4 className="mt-4 mb-3">Mis últimos accesos</h4>
+      <div className="d-flex justify-content-end mb-3">
+        <button
+          className="btn btn-outline-secondary btn-sm"
+          onClick={() => window.location.href = '/change-password'}
+        >
+          Cambiar contraseña
+        </button>
+      </div>
 
+      <h4 className="mt-2 mb-3">Mis últimos accesos</h4>
+
+      {/* Tabla de últimos accesos */}
       <div className="card">
         <div className="card-body">
           {loadingLogs ? (

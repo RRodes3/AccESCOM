@@ -63,3 +63,8 @@ export function adminUpdateUser(id, payload) {
 export function getMyAccessLogs() {
   return api.get('/qr/my-access');
 }
+
+// Actualizar email de contacto
+export function updateContactEmail(contactEmail) {
+  return api.put('/auth/contact-email', { contactEmail });
+}

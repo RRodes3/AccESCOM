@@ -10,6 +10,10 @@ export default function ChangePassword() {
   const [newPassword, setNewPassword]       = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
@@ -97,24 +101,44 @@ export default function ChangePassword() {
       <form onSubmit={handleSubmit}>
         <div className="mb-3">
           <label className="form-label">Contraseña actual</label>
-          <input
-            type="password"
-            className="form-control"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            autoComplete="current-password"
-          />
+          <div className="input-group">
+            <input
+              type={showCurrent ? 'text' : 'password'}
+              className="form-control"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setShowCurrent((v) => !v)}
+              tabIndex={-1}
+            >
+              {showCurrent ? 'Ocultar' : 'Ver'}
+            </button>
+          </div>
         </div>
 
         <div className="mb-3">
           <label className="form-label">Nueva contraseña</label>
-          <input
-            type="password"
-            className="form-control"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-          />
+          <div className="input-group">
+            <input
+              type={showNew ? 'text' : 'password'}
+              className="form-control"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setShowNew((v) => !v)}
+              tabIndex={-1}
+            >
+              {showNew ? 'Ocultar' : 'Ver'}
+            </button>
+          </div>
           <div className="form-text">
             Debe tener al menos 12 caracteres, con mayúsculas, minúsculas, número y símbolo.
           </div>
@@ -122,13 +146,23 @@ export default function ChangePassword() {
 
         <div className="mb-3">
           <label className="form-label">Confirmar nueva contraseña</label>
-          <input
-            type="password"
-            className="form-control"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            autoComplete="new-password"
-          />
+          <div className="input-group">
+            <input
+              type={showConfirm ? 'text' : 'password'}
+              className="form-control"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setShowConfirm((v) => !v)}
+              tabIndex={-1}
+            >
+              {showConfirm ? 'Ocultar' : 'Ver'}
+            </button>
+          </div>
         </div>
 
         <button
