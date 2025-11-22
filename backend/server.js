@@ -33,13 +33,10 @@ app.use('/api/admin/import', require('./src/routers/adminImport'));
 app.use('/api/import', require('./src/routers/adminImport')); // ruta alternativa existente
 
 // Montaje principal para fotos (Cloudinary)
-// Endpoint final: POST /api/import-photos
+// => endpoints: /api/import-photos, /api/import/photos, etc.
 app.use('/api', importPhotosRouter);
 
-// (Opcional) Si quieres también versión con prefijo admin:
-// app.use('/api/admin', importPhotosRouter);
-
-// Servir fotos de usuarios (photoUrl tipo /photos/archivo.jpg)
+// Servir fotos de usuarios (legacy en disco, por si lo sigues usando)
 app.use(
   '/photos',
   express.static(path.join(__dirname, 'public', 'photos'))
@@ -54,7 +51,6 @@ app.get('/', (_req, res) =>
 const { initEmailProvider } = require('./src/utils/mailer');
 const { setupDailyResetJobs } = require('./src/jobs/dailyReset');
 
-// Inicializa proveedor de correo (Resend) - SIN .then
 try {
   initEmailProvider();
   console.log('✅ Proveedor de correo inicializado (Resend)');
@@ -65,7 +61,6 @@ try {
   );
 }
 
-// Inicia jobs diarios (reset INSIDE → OUTSIDE a las 23:00 CDMX)
 setupDailyResetJobs({
   runOnStart: false,
 });
@@ -74,14 +69,4 @@ setupDailyResetJobs({
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
-});
-
-// POST /api/import-photos
-router.post('/import-photos', auth, requireRole(['ADMIN']), upload.single('photo'), async (req, res) => {
-  // ...
-});
-
-// DELETE /api/import-photos/:boletaOrEmail
-router.delete('/import-photos/:boletaOrEmail', auth, requireRole(['ADMIN']), async (req, res) => {
-  // ...
 });
