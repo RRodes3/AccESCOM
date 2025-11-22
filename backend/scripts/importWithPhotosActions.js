@@ -5,6 +5,7 @@ const XLSX = require('xlsx');
 const csvParser = require('csv-parser');
 const bcrypt = require('bcryptjs');
 const { PrismaClient, InstitutionalType } = require('@prisma/client');
+const cloudinary = require('../src/utils/cloudinary'); // ← AGREGAR ESTA LÍNEA
 
 const prisma = new PrismaClient();
 
@@ -101,6 +102,56 @@ async function parseUsers(dataFilePath) {
     });
   }
   return users;
+}
+
+// Agregar esta función helper después de parseUsers y antes de importUsersWithPhotosDryRun
+async function uploadUserPhotoFromZip({ photosFolder, boleta, userId }) {
+  if (!photosFolder) return { photoUrl: null, photoPublicId: null };
+
+  const candidates = [
+    `${boleta}.jpg`,
+    `${boleta}.jpeg`,
+    `${boleta}.png`,
+    `${boleta}.JPG`,
+    `${boleta}.JPEG`,
+    `${boleta}.PNG`,
+  ];
+
+  let localPath = null;
+
+  for (const filename of candidates) {
+    const candidatePath = path.join(photosFolder, filename);
+    if (fs.existsSync(candidatePath)) {
+      localPath = candidatePath;
+      break;
+    }
+  }
+
+  if (!localPath) {
+    return { photoUrl: null, photoPublicId: null };
+  }
+
+  try {
+    console.log(`📤 Subiendo foto a Cloudinary: ${path.basename(localPath)}`);
+    const result = await cloudinary.uploader.upload(localPath, {
+      folder: 'accescom/users',
+      public_id: `user_${userId || boleta}_${Date.now()}`,
+      overwrite: true,
+      resource_type: 'image',
+      transformation: [
+        { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+      ],
+    });
+
+    console.log(`✅ Foto subida: ${result.public_id}`);
+    return {
+      photoUrl: result.secure_url,
+      photoPublicId: result.public_id,
+    };
+  } catch (error) {
+    console.error(`❌ Error subiendo foto para boleta ${boleta}:`, error.message);
+    return { photoUrl: null, photoPublicId: null };
+  }
 }
 
 // Dry run: validar, detectar conflictos, NO modificar BD ni copiar fotos
@@ -285,53 +336,22 @@ async function importUsersWithPhotosReal(zipPath, { conflictAction = 'exclude' }
     }
 
     // Procesar fotos + upserts
-    const photoExtensions = ['.jpg', '.jpeg', '.png'];
     let created = 0;
     let updated = 0;
     let photosProcessed = 0;
 
     for (const u of toProcess) {
       let finalPhotoUrl = null;
+      let finalPhotoPublicId = null;
 
-      if (u.photoUrlRaw.startsWith('/photos/')) {
-        const dest = path.join(photosDestDir, path.basename(u.photoUrlRaw));
-        if (fs.existsSync(dest)) finalPhotoUrl = u.photoUrlRaw;
-      } else if (u.photoUrlRaw && /\.(jpe?g|png)$/i.test(u.photoUrlRaw) && photosFolder) {
-        const source = path.join(photosFolder, u.photoUrlRaw);
-        if (fs.existsSync(source)) {
-          const normalizedName = u.photoUrlRaw.toLowerCase();
-          const destPath = path.join(photosDestDir, normalizedName);
-          if (!fs.existsSync(destPath)) {
-            fs.copyFileSync(source, destPath);
-            photosProcessed++;
-          }
-          finalPhotoUrl = `/photos/${normalizedName}`;
-        }
-      }
-
-      if (!finalPhotoUrl && photosFolder) {
-        for (const ext of photoExtensions) {
-          const candidate = path.join(photosFolder, `${u.boleta}${ext}`);
-          if (fs.existsSync(candidate)) {
-            const normalizedExt = ext.toLowerCase();
-            const destPath = path.join(photosDestDir, `${u.boleta}${normalizedExt}`);
-            if (!fs.existsSync(destPath)) {
-              fs.copyFileSync(candidate, destPath);
-              photosProcessed++;
-            }
-            finalPhotoUrl = `/photos/${u.boleta}${normalizedExt}`;
-            break;
-          }
-        }
-      }
-
+      // Paso 1: Crear o actualizar usuario primero (necesitamos el ID)
       const plainPassword = buildDefaultPassword({ firstName: u.firstName, lastNameP: u.lastNameP, boleta: u.boleta });
       const passwordHash = await bcrypt.hash(plainPassword, 10);
       const instTypeEnum = mapInstitutionalTypeForPrisma(u.institutionalType);
 
-      const existingFinal = await prisma.user.findFirst({ where: { email: u.email } });
+      const existingBefore = await prisma.user.findFirst({ where: { email: u.email } });
 
-      await prisma.user.upsert({
+      const upsertedUser = await prisma.user.upsert({
         where: { email: u.email },
         update: {
           firstName: u.firstName,
@@ -342,7 +362,6 @@ async function importUsersWithPhotosReal(zipPath, { conflictAction = 'exclude' }
           institutionalType: instTypeEnum ?? undefined,
           password: passwordHash,
           name: buildFullName(u.firstName, u.lastNameP, u.lastNameM),
-          photoUrl: finalPhotoUrl || undefined,
           contactEmail: u.contactEmail || null
         },
         create: {
@@ -357,12 +376,68 @@ async function importUsersWithPhotosReal(zipPath, { conflictAction = 'exclude' }
           name: buildFullName(u.firstName, u.lastNameP, u.lastNameM),
           isActive: true,
           mustChangePassword: u.role === 'USER',
-          photoUrl: finalPhotoUrl || null,
           contactEmail: u.contactEmail || null
         },
+        select: { id: true, email: true }
       });
 
-      if (existingFinal) updated++; else created++;
+      if (existingBefore) updated++; else created++;
+
+      // Paso 2: Procesar foto si existe
+      // Prioridad 1: URL explícita de Cloudinary ya existente
+      if (u.photoUrlRaw && u.photoUrlRaw.startsWith('https://res.cloudinary.com/')) {
+        finalPhotoUrl = u.photoUrlRaw;
+        // Intentar extraer public_id de la URL (opcional, puede ser complejo)
+        console.log(`ℹ️ Usuario ${u.email}: usando URL Cloudinary existente`);
+      }
+      // Prioridad 2: Archivo local declarado en CSV
+      else if (u.photoUrlRaw && /\.(jpe?g|png)$/i.test(u.photoUrlRaw) && photosFolder) {
+        const source = path.join(photosFolder, u.photoUrlRaw);
+        if (fs.existsSync(source)) {
+          try {
+            const result = await cloudinary.uploader.upload(source, {
+              folder: 'accescom/users',
+              public_id: `user_${upsertedUser.id}_${Date.now()}`,
+              overwrite: true,
+              resource_type: 'image',
+              transformation: [
+                { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+              ],
+            });
+            finalPhotoUrl = result.secure_url;
+            finalPhotoPublicId = result.public_id;
+            photosProcessed++;
+            console.log(`📸 Subida foto declarada: ${u.photoUrlRaw} → ${result.public_id}`);
+          } catch (err) {
+            console.error(`❌ Error subiendo foto declarada para ${u.email}:`, err.message);
+          }
+        }
+      }
+      // Prioridad 3: Buscar automáticamente por boleta
+      if (!finalPhotoUrl && photosFolder) {
+        const { photoUrl, photoPublicId } = await uploadUserPhotoFromZip({
+          photosFolder,
+          boleta: u.boleta,
+          userId: upsertedUser.id
+        });
+        if (photoUrl) {
+          finalPhotoUrl = photoUrl;
+          finalPhotoPublicId = photoPublicId;
+          photosProcessed++;
+        }
+      }
+
+      // Paso 3: Actualizar usuario con foto si se obtuvo
+      if (finalPhotoUrl) {
+        await prisma.user.update({
+          where: { id: upsertedUser.id },
+          data: {
+            photoUrl: finalPhotoUrl,
+            photoPublicId: finalPhotoPublicId
+          },
+        });
+        console.log(`✅ Usuario ${u.email} actualizado con foto Cloudinary`);
+      }
     }
 
     return {
