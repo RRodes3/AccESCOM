@@ -30,10 +30,10 @@ app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));
 app.use('/api/guest', require('./src/routers/guest'));
 app.use('/api/admin/import', require('./src/routers/adminImport'));
-app.use('/api/import', require('./src/routers/adminImport')); // ruta alternativa existente
+app.use('/api/import', require('./src/routers/adminImport')); // alternativa
 
-// Montaje principal para fotos (Cloudinary)
-// => endpoints: /api/import-photos, /api/import/photos, etc.
+// Monta router de fotos (Cloudinary)
+// Endpoints: POST /api/admin/import-photos, DELETE /api/admin/import-photos/:boletaOrEmail
 app.use('/api', importPhotosRouter);
 
 // Servir fotos de usuarios (legacy en disco, por si lo sigues usando)
