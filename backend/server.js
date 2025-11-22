@@ -31,6 +31,7 @@ app.use('/api/qr', require('./src/routers/qr'));
 app.use('/api/guest', require('./src/routers/guest'));
 app.use('/api/admin/import', require('./src/routers/adminImport'));
 app.use('/api/import', require('./src/routers/adminImport')); // alternativa
+app.use('/api/profile', require('./src/routers/profile'));
 
 // Monta router de fotos (Cloudinary)
 // Endpoints: POST /api/admin/import-photos, DELETE /api/admin/import-photos/:boletaOrEmail

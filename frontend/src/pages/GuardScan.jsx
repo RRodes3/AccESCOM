@@ -95,7 +95,9 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
 
   // Construcción de URL completa de foto
   const photoSrc = owner?.photoUrl
-    ? `${ASSETS_BASE_URL}${owner.photoUrl}`
+    ? (owner.photoUrl.startsWith('http')
+        ? owner.photoUrl
+        : `${ASSETS_BASE_URL.replace(/\/+$/, '')}/${owner.photoUrl.replace(/^\/+/, '')}`)
     : null;
 
   return (

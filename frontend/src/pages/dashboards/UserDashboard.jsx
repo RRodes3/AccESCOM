@@ -76,8 +76,28 @@ function QrPanel({ kind, onClose }) {
 }
 
 export default function UserDashboard() {
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || 'null'));
   const [showKind, setShowKind] = useState(null);
+
+  useEffect(() => {
+    // Escuchar cambios en localStorage (cuando vuelves de otra página)
+    const handleStorageChange = () => {
+      const updated = JSON.parse(localStorage.getItem('user') || 'null');
+      setUser(updated);
+    };
+    
+    // Llamar inmediatamente por si hubo cambios
+    handleStorageChange();
+    
+    window.addEventListener('storage', handleStorageChange);
+    // También escuchar evento personalizado para cambios en la misma pestaña
+    window.addEventListener('userUpdated', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('userUpdated', handleStorageChange);
+    };
+  }, []);
 
   const openKind = async (kind) => {
     try { await api.post('/qr/ensure-both'); } catch {}

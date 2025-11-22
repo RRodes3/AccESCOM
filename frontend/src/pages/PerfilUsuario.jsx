@@ -85,6 +85,7 @@ export default function PerfilUsuario() {
           if (stored) {
             stored.contactEmail = updated.contactEmail;
             localStorage.setItem('user', JSON.stringify(stored));
+            window.dispatchEvent(new Event('userUpdated'));
           }
         } catch {}
         setEmailSuccess('Correo actualizado.');
@@ -194,11 +195,10 @@ export default function PerfilUsuario() {
                     }
                     
                     const form = new FormData();
-                    form.append('boletaOrEmail', user.boleta || user.email);
                     form.append('photo', file);
-                    
+
                     try {
-                      const { data } = await api.post('/admin/import/photos', form, {
+                      const { data } = await api.post('/profile/photo', form, {
                         headers: { 'Content-Type': 'multipart/form-data' }
                       });
                       if (data.ok) {
@@ -226,7 +226,7 @@ export default function PerfilUsuario() {
                 onClick={async () => {
                   if (!window.confirm('¿Eliminar tu foto de perfil?')) return;
                   try {
-                    const { data } = await api.delete(`/admin/import/photos/${user.boleta || user.email}`);
+                    const { data } = await api.delete('/profile/photo');
                     if (data.ok) {
                       setUser(prev => ({ ...prev, photoUrl: null }));
                       const stored = JSON.parse(localStorage.getItem('user') || 'null');
