@@ -1,12 +1,10 @@
 // backend/src/routers/qr.js
-import express from 'express';
-import auth from '../middleware/auth.js';
-import requireRole from '../middleware/requireRole.js';
-import { PrismaClient } from '@prisma/client';
-import crypto from 'crypto';
-import mailer from '../utils/mailer.js';
-
-const { sendAccessNotificationEmail } = mailer;
+const express = require('express');
+const auth = require('../middleware/auth');
+const requireRole = require('../middleware/requireRole');
+const { PrismaClient } = require('@prisma/client');
+const crypto = require('crypto');
+const { sendAccessNotificationEmail } = require('../utils/mailer');
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -1247,4 +1245,4 @@ router.post(
 /* =========================================================
    Export
    ========================================================= */
-export default router;
+module.exports = router;

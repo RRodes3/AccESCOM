@@ -26,8 +26,8 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 const importPhotosRouter = require('./src/routers/importPhotos');
 app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
-app.use('/api/qr', require('./src/routers/qr'));
-app.use('/api/guest', require('./src/routers/guest'));
+app.use('/api/qr', require('./src/routers/qr'));          // sin .default
+app.use('/api/guest', require('./src/routers/guest'));    // igual (CommonJS)
 app.use('/api/admin/import', require('./src/routers/adminImport'));
 app.use('/api/import', require('./src/routers/adminImport')); // Ruta alternativa más corta
 app.use('/api/admin', importPhotosRouter);
