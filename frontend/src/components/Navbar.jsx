@@ -287,12 +287,25 @@ export default function Navbar() {
                       </span>
                     </li>
 
+                    {/* Mi perfil - Solo para usuarios institucionales */}
+                    {isInstitutionalUser && (
+                      <li className="nav-item">
+                        <Link
+                          className="nav-link btn btn-sm btn-outline-light"
+                          to="/mi-perfil"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          Mi perfil
+                        </Link>
+                      </li>
+                    )}
+
                     {showChangePassword && (
                       <li className="nav-item">
                         <Link
-                          className="nav-link"
+                          className="nav-link btn btn-sm btn-outline-light"
                           to="/change-password"
-                          style={{ pointerEvents: 'auto', color: 'white' }}
+                          style={{ pointerEvents: 'auto' }}
                         >
                           Cambiar contraseña
                         </Link>

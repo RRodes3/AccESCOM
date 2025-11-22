@@ -58,3 +58,8 @@ export const getLastAccesses = (params = {}) => {
 export function adminUpdateUser(id, payload) {
   return api.patch(`/admin/users/${id}`, payload);
 }
+
+// Obtener registros de acceso del usuario
+export function getMyAccessLogs() {
+  return api.get('/qr/my-access');
+}

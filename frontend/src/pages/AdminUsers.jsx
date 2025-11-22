@@ -258,7 +258,8 @@ export default function AdminUsers() {
       role: u.role || 'USER',
       institutionalType: u.institutionalType || '',
       isActive: u.isActive,
-      mustChangePassword: !!u.mustChangePassword
+      mustChangePassword: !!u.mustChangePassword,
+      newPassword: ''    // ← AGREGAR ESTO
     });
     setEditErrors({});
     setEditOpen(true);
@@ -301,7 +302,8 @@ export default function AdminUsers() {
         role: editForm.role,
         institutionalType: editForm.role === 'USER' ? (editForm.institutionalType || '') : undefined,
         isActive: editForm.isActive,
-        mustChangePassword: editForm.mustChangePassword
+        mustChangePassword: editForm.mustChangePassword,
+        ...(editForm.newPassword ? { newPassword: editForm.newPassword } : {})  // ← AGREGAR ESTO
       };
       await updateUser(editUser.id, payload);
       await load();
@@ -971,6 +973,19 @@ export default function AdminUsers() {
                           onChange={e=>setEditForm(f=>({...f,mustChangePassword:e.target.checked}))}
                         />
                       </div>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label">Nueva contraseña (opcional)</label>
+                      <input
+                        type="password"
+                        className="form-control"
+                        placeholder="Dejar vacío para mantener la actual"
+                        value={editForm.newPassword || ''}
+                        onChange={e => setEditForm(f => ({ ...f, newPassword: e.target.value }))}
+                      />
+                      <small className="form-text text-muted">
+                        Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.
+                      </small>
                     </div>
                   </div>
                 </div>

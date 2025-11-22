@@ -1,5 +1,28 @@
+import express from 'express';
+import { auth } from '../middleware/auth'; // Asegúrate de que la ruta sea correcta
+import prisma from '../prisma'; // Asegúrate de que la instancia de Prisma esté importada
+
+const router = express.Router();
+
+// Ruta para obtener los accesos del usuario
+router.get('/my-access', auth, async (req, res) => {
+  try {
+    const userId = req.user.id; // Obtiene el ID del usuario autenticado
+
+    const logs = await prisma.qRAttempt.findMany({
+      where: { userId }, // Filtra los registros por el ID del usuario
+      orderBy: { createdAt: 'desc' }, // Ordena los registros por fecha de creación
+      take: 20 // Limita la cantidad de registros a 20
+    });
+
+    res.json({ ok: true, logs }); // Responde con los registros encontrados
+  } catch (err) {
+    console.error(err); // Imprime el error en la consola
+    res.status(500).json({ ok: false, message: "Error obteniendo accesos" }); // Responde con un error
+  }
+});
+
 // backend/src/routers/qr.js
-const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
@@ -1081,4 +1104,4 @@ router.post('/scan', auth, requireRole(['GUARD', 'ADMIN']), async (req, res) => 
   }
 });
 
-module.exports = router;
+export default router;

@@ -18,6 +18,7 @@ export default function Login() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [captchaError, setCaptchaError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Limpia el formulario cada vez que entras al login
   useEffect(() => {
@@ -117,16 +118,34 @@ export default function Login() {
         />
 
         <label className="form-label">Contraseña</label>
-        <input
-          type="password"
-          name="password"
-          className="form-control mb-3"
-          placeholder="••••••••"
-          value={password}
-          onChange={onChange}
-          autoComplete="new-password"
-          disabled={loading}
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            type={showPassword ? "text" : "password"}
+            name="password"
+            className="form-control mb-3"
+            placeholder="••••••••"
+            value={password}
+            onChange={onChange}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            style={{
+              position: "absolute",
+              right: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: "0.9rem"
+            }}
+          >
+            {showPassword ? "🙈" : "👁️"}
+          </button>
+        </div>
 
         <button className="btn btn-primary w-100" type="submit" disabled={loading}>
           {loading ? 'Iniciando...' : 'Iniciar sesión'}

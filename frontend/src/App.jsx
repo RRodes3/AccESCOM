@@ -25,6 +25,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ChangePassword from './pages/ChangePassword';
 import LastAccesses from './pages/LastAccesses.jsx';
+import PerfilUsuario from './pages/PerfilUsuario'; // Add this import
 
 
 function AppLayout() {
@@ -58,6 +59,15 @@ function AppLayout() {
             element={
               <ProtectedRoute>
                 <DashboardSwitch />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/mi-perfil"
+            element={
+              <ProtectedRoute>
+                <PerfilUsuario />
               </ProtectedRoute>
             }
           />
