@@ -232,13 +232,16 @@ router.post('/forgot-password', async (req, res) => {
       data: { expiresAt: new Date() }
     });
 
-    const token = crypto.randomBytes(32).toString('hex');
+    // Generar token aleatorio (este se envía al usuario)
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    // Hashear el token antes de guardarlo en BD
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
     await prisma.passwordReset.create({
       data: {
         userId: user.id,
-        token,
+        token: tokenHash,  // Guardar el hash, NO el token original
         expiresAt,
         ip,
         userAgent: req.headers['user-agent'] || null
@@ -247,7 +250,7 @@ router.post('/forgot-password', async (req, res) => {
 
     const recipientEmail = user.contactEmail || user.email;
     const userName = [user.firstName, user.lastNameP, user.lastNameM].filter(Boolean).join(' ') || user.name || 'Usuario';
-    const resetUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+    const resetUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/reset-password?token=${rawToken}`;  // Enviar token original
 
     console.log(`📧 Enviando reset a: ${recipientEmail}`);
     console.log(`🔗 Link: ${resetUrl}`);
@@ -270,37 +273,77 @@ router.post('/forgot-password', async (req, res) => {
 
 router.post('/reset-password', async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
-    if (!token || !newPassword) return res.status(400).json({ error: 'Token y contraseña requeridos' });
-    if (!RE_PASSWORD.test(newPassword)) {
-      return res.status(400).json({ error: 'Contraseña no cumple requisitos.' });
+    const rawToken = String(req.body?.token || '').trim();
+
+    // acepta password o newPassword por si acaso
+    const newPassword = String(
+      req.body?.password || req.body?.newPassword || ''
+    );
+
+    if (!rawToken || !RE_PASSWORD.test(newPassword)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Token inválido o contraseña no cumple política.',
+      });
     }
 
-    const record = await prisma.passwordReset.findUnique({
-      where: { token },
-      include: { user: { select: { id: true, isActive: true } } }
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const pr = await prisma.passwordReset.findUnique({
+      where: { token: tokenHash },
     });
 
-    if (!record) return res.status(400).json({ error: 'Token inválido' });
-    if (record.usedAt) return res.status(400).json({ error: 'Token ya utilizado' });
-    if (new Date() > record.expiresAt) return res.status(400).json({ error: 'Token expirado' });
-    if (!record.user.isActive) return res.status(403).json({ error: 'Cuenta deshabilitada' });
+    if (!pr || pr.usedAt || pr.expiresAt <= new Date()) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Enlace inválido o expirado.' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: pr.userId },
+    });
+
+    if (!user || user.role !== 'USER' || !user.isActive) {
+      return res.status(400).json({
+        ok: false,
+        error: 'No es posible restablecer para esta cuenta.',
+      });
+    }
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
-      where: { id: record.userId },
-      data: { password: hash, mustChangePassword: false }
-    });
-    await prisma.passwordReset.update({
-      where: { id: record.id },
-      data: { usedAt: new Date() }
-    });
 
-    console.log(`✅ Reset completado para user ${record.userId}`);
-    return res.json({ ok: true, message: 'Contraseña actualizada.' });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { password: hash },
+      }),
+      prisma.passwordReset.update({
+        where: { id: pr.id },
+        data: { usedAt: new Date() },
+      }),
+      prisma.passwordReset.updateMany({
+        where: {
+          userId: user.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+          NOT: { id: pr.id },
+        },
+        data: { expiresAt: new Date() },
+      }),
+    ]);
+
+    return res.json({
+      ok: true,
+      message: 'Contraseña actualizada. Ya puedes iniciar sesión.',
+    });
   } catch (e) {
-    console.error('RESET PASSWORD ERROR:', e);
-    return res.status(500).json({ error: 'Error interno' });
+    console.error(e);
+    return res
+      .status(500)
+      .json({ ok: false, error: 'No se pudo restablecer la contraseña' });
   }
 });
 
