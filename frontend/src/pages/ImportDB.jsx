@@ -3,51 +3,70 @@ import { api } from "../services/api";
 import "./ImportDB.css";
 
 export default function ImportDB() {
-  const [tab, setTab] = useState("users"); // users | guests
-  const [importType, setImportType] = useState("csv"); // csv | zip
+  const [tab, setTab] = useState("users"); // users | guests (guests aún no implementado)
+  const [mode, setMode] = useState("csv"); // csv | zip | photos
   const [file, setFile] = useState(null);
   const [conflictAction, setConflictAction] = useState("exclude"); // exclude | overwrite | delete
   const [loading, setLoading] = useState(false);
-  
-  // Estados para resultados de validación
-  const [validationResult, setValidationResult] = useState(null);
+
+  // Estados de resultados
+  const [validationResult, setValidationResult] = useState(null); // dry-run csv/zip
   const [showConflictOptions, setShowConflictOptions] = useState(false);
-  
-  // Estados para importación final
-  const [importResult, setImportResult] = useState(null);
+  const [importResult, setImportResult] = useState(null); // resultado final csv/zip
+  const [photosResult, setPhotosResult] = useState(null); // resultado fotos
   const [err, setErr] = useState("");
+  const [status, setStatus] = useState(""); // mensaje rápido al importar directo
 
-  // Determinar el endpoint según el tipo de importación
-  const getEndpoint = () => {
-    if (importType === "zip") {
-      return `/admin/import/import/zip`;
+  // Determinar endpoint
+  function getEndpoint() {
+    if (mode === "photos") return "/admin/import-photos";
+    if (mode === "zip") return "/admin/import/zip";
+    if (mode === "csv") {
+      if (tab === "users") return "/admin/users";
+      return "/admin/guests"; // placeholder si luego se implementa
     }
-    return `/admin/import/${tab}`; // users o guests
-  };
+    return "/admin/users";
+  }
 
-  // Paso 1: Validar archivo (dry-run)
+  // Tipos aceptados
+  function getFileAccept() {
+    if (mode === "photos") {
+      return ".zip,.jpg,.jpeg,.png,image/jpeg,image/png,application/zip,application/x-zip-compressed";
+    }
+    if (mode === "zip") {
+      return ".zip,application/zip,application/x-zip-compressed";
+    }
+    return ".csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+
+  // Validación (dry-run) excepto fotos
   async function handleValidation(e) {
     e.preventDefault();
     if (!file) {
-      setErr("Selecciona un archivo CSV/XLSX/ZIP");
+      setErr("Selecciona un archivo");
       return;
     }
 
-    // Validación: ZIP solo funciona con el endpoint /import
-    if (importType === "zip" && !file.name.toLowerCase().endsWith('.zip')) {
-      setErr("Debes seleccionar un archivo ZIP cuando el tipo de importación es 'ZIP con fotos'");
+    if (mode === "zip" && !file.name.toLowerCase().endsWith(".zip")) {
+      setErr("Debes seleccionar un archivo ZIP en modo ZIP");
       return;
     }
-
-    if (importType === "csv" && file.name.toLowerCase().endsWith('.zip')) {
-      setErr("Debes seleccionar un archivo CSV/XLSX cuando el tipo de importación es 'CSV/XLSX'");
+    if (mode === "csv" && file.name.toLowerCase().endsWith(".zip")) {
+      setErr("Selecciona CSV/XLSX en modo CSV");
+      return;
+    }
+    if (mode === "photos") {
+      // Fotos se procesan directo
+      await handleSubmit(e);
       return;
     }
 
     setErr("");
+    setStatus("");
     setValidationResult(null);
     setShowConflictOptions(false);
     setImportResult(null);
+    setPhotosResult(null);
     setLoading(true);
 
     try {
@@ -55,8 +74,6 @@ export default function ImportDB() {
       formData.append("file", file);
 
       const endpoint = getEndpoint();
-      
-      // ✅ CORREGIDO: ZIP también hace dry-run primero
       const url = `${endpoint}?dryRun=true&conflictAction=${conflictAction}`;
       const { data } = await api.post(url, formData);
 
@@ -79,10 +96,96 @@ export default function ImportDB() {
     }
   }
 
-  // Paso 2: Importar con acción seleccionada
+  // Importación directa (sin dry-run) para csv, zip y fotos
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setStatus("");
+    if (!file) {
+      setStatus("Selecciona un archivo primero");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Fotos (siempre directo)
+      if (mode === "photos") {
+        const formData = new FormData();
+        formData.append("file", file);
+        const { data } = await api.post("/admin/import-photos", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        if (data.ok) {
+          setStatus(
+            `Fotos importadas: ${data.processed}. ` +
+              (data.notMatched?.length
+                ? `Sin usuario para: ${data.notMatched
+                    .slice(0, 10)
+                    .join(", ")}${data.notMatched.length > 10 ? "..." : ""}. `
+                : "") +
+              (data.skipped?.length
+                ? `Archivos ignorados: ${data.skipped.length}.`
+                : "")
+          );
+          setPhotosResult(data);
+          setImportResult(null);
+          setValidationResult(null);
+        } else {
+          setStatus(data.error || "Error al importar fotos");
+        }
+        return;
+      }
+
+      // CSV / ZIP directo
+      const formData = new FormData();
+      formData.append("file", file);
+      const endpoint = getEndpoint();
+      const url =
+        mode === "zip" || mode === "csv"
+          ? `${endpoint}?dryRun=false&conflictAction=${conflictAction}`
+          : endpoint;
+
+      const { data } = await api.post(url, formData);
+      setImportResult(data);
+      setValidationResult(null);
+      setPhotosResult(null);
+
+      if (mode === "zip" && data?.photosProcessed !== undefined) {
+        setStatus(
+          `Usuarios importados: ${data.upserted || data.data?.created || 0}. Fotos procesadas: ${data.photosProcessed}.`
+        );
+      } else {
+        setStatus(
+          `Usuarios importados: ${
+            data.upserted || data.data?.created || 0
+          }.` +
+            (data.conflicts
+              ? ` Conflictos: excluidos=${data.conflicts.excluded || 0}, sobrescritos=${
+                  data.conflicts.overwritten || 0
+                }, eliminados=${data.conflicts.deleted || 0}.`
+              : "")
+        );
+      }
+
+      setTimeout(() => {
+        setFile(null);
+        const fi = document.getElementById("fileInput");
+        if (fi) fi.value = "";
+      }, 150);
+    } catch (err) {
+      console.error(err);
+      setStatus("Error en la importación");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Importación final según acción (tras dry-run)
   async function handleImport(selectedAction) {
     setLoading(true);
     setErr("");
+    setStatus("");
     setShowConflictOptions(false);
 
     try {
@@ -90,18 +193,21 @@ export default function ImportDB() {
       formData.append("file", file);
 
       const endpoint = getEndpoint();
-      const url = `${endpoint}?dryRun=false&conflictAction=${selectedAction}`;
+      const url =
+        mode === "zip" || mode === "csv"
+          ? `${endpoint}?dryRun=false&conflictAction=${selectedAction}`
+          : endpoint;
 
       const { data } = await api.post(url, formData);
 
       setImportResult(data);
       setValidationResult(null);
-      
-      // Limpiar después de importar exitosamente
+      setPhotosResult(null);
+
       setTimeout(() => {
         setFile(null);
-        const fileInput = document.getElementById('fileInput');
-        if (fileInput) fileInput.value = '';
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) fileInput.value = "";
       }, 100);
     } catch (e) {
       const data = e?.response?.data;
@@ -112,40 +218,36 @@ export default function ImportDB() {
     }
   }
 
-  // Reset todo
+  // Reset
   function handleReset() {
     setFile(null);
     setValidationResult(null);
     setImportResult(null);
+    setPhotosResult(null);
     setShowConflictOptions(false);
     setErr("");
+    setStatus("");
     setConflictAction("exclude");
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) fileInput.value = '';
+    const fileInput = document.getElementById("fileInput");
+    if (fileInput) fileInput.value = "";
   }
 
-  // Handler para cambio de tipo de importación
-  function handleImportTypeChange(newType) {
-    setImportType(newType);
+  // Cambio de modo
+  function handleModeChange(newMode) {
+    setMode(newMode);
     setFile(null);
     setValidationResult(null);
     setImportResult(null);
+    setPhotosResult(null);
     setShowConflictOptions(false);
     setErr("");
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) fileInput.value = '';
+    setStatus("");
+    const fileInput = document.getElementById("fileInput");
+    if (fileInput) fileInput.value = "";
   }
 
   const validationSummary = validationResult?.summary || validationResult;
   const importSummary = importResult;
-
-  // Determinar el accept del input según el tipo
-  const getFileAccept = () => {
-    if (importType === "zip") {
-      return ".zip,application/zip,application/x-zip-compressed";
-    }
-    return ".csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  };
 
   return (
     <div className="importdb container py-3">
@@ -154,43 +256,51 @@ export default function ImportDB() {
       {/* Tabs */}
       <div className="btn-group mb-3">
         <button
-          className={`btn ${tab === "users" ? "btn-primary" : "btn-outline-primary"}`}
+          className={`btn ${
+            tab === "users" ? "btn-primary" : "btn-outline-primary"
+          }`}
           onClick={() => setTab("users")}
         >
           Usuarios institucionales
         </button>
         <button
-          className={`btn ${tab === "guests" ? "btn-primary" : "btn-outline-primary"}`}
+          className={`btn ${
+            tab === "guests" ? "btn-primary" : "btn-outline-primary"
+          }`}
           onClick={() => setTab("guests")}
+          disabled
         >
-          Invitados
+          Invitados (no disponible)
         </button>
       </div>
 
-      {/* Formulario de validación */}
-      {!importResult && (
+      {/* Form principal */}
+      {!importResult && !photosResult && (
         <div className="card shadow-sm mb-3">
           <div className="card-body">
-            <h5 className="card-title">Paso 1: Seleccionar archivo y validar</h5>
-            
-            {/* Selector de tipo de importación */}
+            <h5 className="card-title">Paso 1: Seleccionar archivo</h5>
+
             <div className="mb-3">
-              <label htmlFor="importTypeSelect" className="form-label">
-                <strong>Tipo de importación:</strong>
+              <label htmlFor="modeSelect" className="form-label">
+                <strong>Modo de importación:</strong>
               </label>
               <select
-                id="importTypeSelect"
+                id="modeSelect"
                 className="form-select"
-                value={importType}
-                onChange={(e) => handleImportTypeChange(e.target.value)}
+                value={mode}
+                onChange={(e) => handleModeChange(e.target.value)}
               >
                 <option value="csv">📄 CSV/XLSX (solo datos)</option>
                 <option value="zip">📦 ZIP (CSV/XLSX + fotos)</option>
+                <option value="photos">🖼️ Fotos (solo imágenes o ZIP)</option>
               </select>
               <div className="form-text">
-                {importType === "csv" 
-                  ? "Importa usuarios desde archivo CSV o XLSX sin fotos"
-                  : "Importa usuarios con sus fotos desde un archivo ZIP que contenga el CSV/XLSX y las imágenes"}
+                {mode === "csv" &&
+                  "Importa únicamente los datos de usuarios desde CSV/XLSX."}
+                {mode === "zip" &&
+                  "Importa datos y fotos empaquetados en un ZIP (CSV/XLSX + imágenes)."}
+                {mode === "photos" &&
+                  "Sube solo fotos (imagen suelta o ZIP). Coincide por nombre de archivo = boleta."}
               </div>
             </div>
 
@@ -198,42 +308,77 @@ export default function ImportDB() {
               <div className="row g-3 align-items-end">
                 <div className="col-md-10">
                   <label htmlFor="fileInput" className="form-label">
-                    {importType === "zip" ? "Archivo ZIP" : "Archivo CSV/XLSX"}
+                    {mode === "photos"
+                      ? "Archivo de fotos (ZIP o imagen)"
+                      : mode === "zip"
+                      ? "Archivo ZIP"
+                      : "Archivo CSV/XLSX"}
                   </label>
                   <input
                     id="fileInput"
                     type="file"
-                    className="form-control"
+                    className="form-control mt-3"
                     accept={getFileAccept()}
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f && f.size > 50 * 1024 * 1024) {
+                        setErr("Archivo demasiado grande (>50MB)");
+                        e.target.value = "";
+                        setFile(null);
+                        return;
+                      }
+                      setFile(f || null);
+                    }}
                   />
                 </div>
-
                 <div className="col-md-2">
-                  <button className="btn btn-primary w-100" disabled={loading || !file}>
-                    {loading ? "Procesando..." : "Validar"}
+                  <button
+                    className="btn btn-primary w-100"
+                    disabled={loading || !file}
+                  >
+                    {loading
+                      ? "Procesando..."
+                      : mode === "photos"
+                      ? "Importar fotos"
+                      : "Validar"}
                   </button>
                 </div>
               </div>
+
+              {mode !== "photos" && file && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="btn btn-outline-success"
+                    disabled={loading}
+                    onClick={handleSubmit}
+                  >
+                    {loading ? "..." : "Importar directo (sin validación)"}
+                  </button>
+                </div>
+              )}
             </form>
 
             <div className="mt-3 small text-muted">
-              {tab === "users" ? (
+              {tab === "users" && mode !== "photos" && (
                 <>
-                  <strong>Columnas requeridas:</strong> boleta, firstName, lastNameP, lastNameM,
-                  email, role (ADMIN|GUARD|USER), institutionalType (STUDENT|TEACHER|PAE), photoUrl
-                  (opcional)
-                  {importType === "zip" && (
+                  <strong>Columnas CSV/XLSX:</strong> boleta, firstName,
+                  lastNameP, lastNameM, email, role (ADMIN|GUARD|USER),
+                  institutionalType (STUDENT|TEACHER|PAE), photoUrl (opcional)
+                  {mode === "zip" && (
                     <div className="mt-2">
-                      <strong>Estructura del ZIP:</strong> Debe contener un archivo CSV/XLSX con los datos
-                      y las fotos con nombre <code>boleta.jpg</code> o <code>boleta.png</code>
+                      <strong>Estructura ZIP:</strong> CSV/XLSX + fotos
+                      nombradas <code>boleta.jpg</code> o{" "}
+                      <code>boleta.png</code>
                     </div>
                   )}
                 </>
-              ) : (
+              )}
+              {mode === "photos" && (
                 <>
-                  <strong>Columnas requeridas:</strong> firstName, lastNameP, lastNameM, curp,
-                  reason, state (PENDING|APPROVED|REJECTED)
+                  <strong>Fotos:</strong> Cada imagen debe llamarse
+                  <code> boleta.jpg</code> o <code>boleta.png</code>. Si usas
+                  ZIP, se procesan todas. El usuario debe existir.
                 </>
               )}
             </div>
@@ -241,7 +386,19 @@ export default function ImportDB() {
         </div>
       )}
 
-      {/* Mensajes de error */}
+      {/* Status rápido */}
+      {status && !err && (
+        <div className="alert alert-info alert-dismissible fade show">
+          {status}
+          <button
+            type="button"
+            className="btn-close"
+            onClick={() => setStatus("")}
+          ></button>
+        </div>
+      )}
+
+      {/* Error */}
       {err && (
         <div className="alert alert-danger alert-dismissible fade show">
           <strong>Error:</strong> {err}
@@ -254,204 +411,98 @@ export default function ImportDB() {
         </div>
       )}
 
-      {/* Resultado de validación */}
-      {validationResult && !importResult && (
-        <div className="card shadow-sm mb-3">
-          <div className="card-body">
-            <h5 className="card-title">📋 Resultado de validación</h5>
+      {/* Validación CSV/ZIP */}
+      {validationResult &&
+        !importResult &&
+        !photosResult &&
+        mode !== "photos" && (
+          <div className="card shadow-sm mb-3">
+            <div className="card-body">
+              <h5 className="card-title">📋 Resultado de validación</h5>
 
-            {/* Tarjetas de resumen */}
-            <div className="row g-3 mb-4">
-              <div className="col-md-3">
-                <div className="p-3 bg-light rounded text-center">
-                  <h3 className="mb-0">{validationSummary?.total || 0}</h3>
-                  <small className="text-muted">Total registros</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="p-3 bg-success bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-success">{validationSummary?.valid || 0}</h3>
-                  <small className="text-muted">Válidos</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="p-3 bg-danger bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-danger">{validationSummary?.errors || 0}</h3>
-                  <small className="text-muted">Errores</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="p-3 bg-warning bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-warning">
-                    {(validationSummary?.conflicts?.excluded || 0) +
-                      (validationSummary?.conflicts?.deleted || 0) +
-                      (validationSummary?.conflicts?.overwritten || 0)}
-                  </h3>
-                  <small className="text-muted">Conflictos</small>
-                </div>
-              </div>
-            </div>
-
-            {/* Detalles de conflictos */}
-            {validationSummary?.conflicts &&
-              ((validationSummary.conflicts.excluded || 0) +
-                (validationSummary.conflicts.deleted || 0) +
-                (validationSummary.conflicts.overwritten || 0)) > 0 && (
-                <div className="alert alert-warning">
-                  <h6 className="alert-heading">⚠️ Usuarios duplicados detectados:</h6>
-                  <ul className="mb-0">
-                    {validationSummary.conflicts.excluded > 0 && (
-                      <li>
-                        <strong>{validationSummary.conflicts.excluded}</strong> usuarios serán{" "}
-                        <span className="badge bg-secondary">excluidos</span> (ya existen)
-                      </li>
-                    )}
-                    {validationSummary.conflicts.overwritten > 0 && (
-                      <li>
-                        <strong>{validationSummary.conflicts.overwritten}</strong> usuarios serán{" "}
-                        <span className="badge bg-warning text-dark">sobrescritos</span>
-                      </li>
-                    )}
-                    {validationSummary.conflicts.deleted > 0 && (
-                      <li>
-                        <strong>{validationSummary.conflicts.deleted}</strong> usuarios serán{" "}
-                        <span className="badge bg-danger">eliminados</span> y reemplazados
-                      </li>
-                    )}
-                  </ul>
-                  
-                  <div className="alert alert-info mt-3 mb-0">
-                    <small>
-                      ℹ️ <strong>Nota:</strong> La acción seleccionada (excluir/sobrescribir/eliminar) se aplicará 
-                      a todos los usuarios duplicados al momento de importar.
-                    </small>
+              {/* Resumen */}
+              <div className="row g-3 mb-4">
+                <div className="col-md-3">
+                  <div className="p-3 bg-light rounded text-center">
+                    <h3 className="mb-0">{validationSummary?.total || 0}</h3>
+                    <small className="text-muted">Total registros</small>
                   </div>
                 </div>
-              )}
-
-            {/* Contraseñas de ejemplo */}
-            {validationSummary?.samplePasswords && validationSummary.samplePasswords.length > 0 && (
-              <div className="alert alert-info">
-                <h6 className="alert-heading">🔑 Contraseñas generadas (primeros 3 ejemplos):</h6>
-                <div className="table-responsive">
-                  <table className="table table-sm table-bordered mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>Email</th>
-                        <th>Boleta</th>
-                        <th>Contraseña</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {validationSummary.samplePasswords.map((user, idx) => (
-                        <tr key={idx}>
-                          <td>
-                            <code>{user.email}</code>
-                          </td>
-                          <td>
-                            <code>{user.boleta}</code>
-                          </td>
-                          <td>
-                            <code className="text-primary fw-bold">{user.passwordEjemplo}</code>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="col-md-3">
+                  <div className="p-3 bg-success bg-opacity-10 rounded text-center">
+                    <h3 className="mb-0 text-success">
+                      {validationSummary?.valid || 0}
+                    </h3>
+                    <small className="text-muted">Válidos</small>
+                  </div>
                 </div>
-                <small className="text-muted d-block mt-2">
-                  💡 Patrón: inicial + apellido + últimos4dígitos + Nombre + punto
-                </small>
-              </div>
-            )}
-
-            {/* Errores de validación */}
-            {Array.isArray(validationResult.errors) && validationResult.errors.length > 0 && (
-              <div className="mt-3">
-                <h6 className="text-danger">❌ Errores de validación ({validationResult.errors.length}):</h6>
-                <div className="accordion" id="errorsAccordion">
-                  <div className="accordion-item">
-                    <h2 className="accordion-header">
-                      <button
-                        className="accordion-button collapsed"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#collapseErrors"
-                      >
-                        Ver detalles de errores
-                      </button>
-                    </h2>
-                    <div
-                      id="collapseErrors"
-                      className="accordion-collapse collapse"
-                      data-bs-parent="#errorsAccordion"
-                    >
-                      <div className="accordion-body">
-                        <div className="table-responsive">
-                          <table className="table table-sm table-bordered">
-                            <thead className="table-light">
-                              <tr>
-                                <th width="80">Línea</th>
-                                <th>Campo</th>
-                                <th>Error</th>
-                                <th>Datos originales</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {validationResult.errors.map((e, idx) => (
-                                <tr key={idx}>
-                                  <td className="text-center">
-                                    <span className="badge bg-danger">{e.line}</span>
-                                  </td>
-                                  <td>
-                                    {Object.keys(e.errors).map((k) => (
-                                      <span key={k} className="badge bg-secondary me-1">
-                                        {k}
-                                      </span>
-                                    ))}
-                                  </td>
-                                  <td>
-                                    <ul className="mb-0 small">
-                                      {Object.entries(e.errors).map(([k, v]) => (
-                                        <li key={k}>{v}</li>
-                                      ))}
-                                    </ul>
-                                  </td>
-                                  <td>
-                                    <code className="small">{JSON.stringify(e.row)}</code>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
+                <div className="col-md-3">
+                  <div className="p-3 bg-danger bg-opacity-10 rounded text-center">
+                    <h3 className="mb-0 text-danger">
+                      {validationSummary?.errors || 0}
+                    </h3>
+                    <small className="text-muted">Errores</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="p-3 bg-warning bg-opacity-10 rounded text-center">
+                    <h3 className="mb-0 text-warning">
+                      {(validationSummary?.conflicts?.excluded || 0) +
+                        (validationSummary?.conflicts?.deleted || 0) +
+                        (validationSummary?.conflicts?.overwritten || 0)}
+                    </h3>
+                    <small className="text-muted">Conflictos</small>
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* Paso 2: Opciones de acción CON LISTA DE CONFLICTOS INTEGRADA */}
-            {showConflictOptions && (
-              <div className="alert alert-primary mt-4">
-                <h6 className="alert-heading">🚀 Paso 2: Confirmar importación</h6>
-                
-                {validationSummary?.valid > 0 ? (
-                  <p className="mb-3">
-                    Todos los registros son duplicados. Elige cómo deseas manejarlos:
-                  </p>
-                ) : (
-                  <p className="mb-3">
-                    <strong>Todos los registros son duplicados.</strong> Elige cómo deseas manejarlos:
-                  </p>
+              {/* Conflictos */}
+              {validationSummary?.conflicts &&
+                ((validationSummary.conflicts.excluded || 0) +
+                  (validationSummary.conflicts.deleted || 0) +
+                  (validationSummary.conflicts.overwritten || 0)) > 0 && (
+                  <div className="alert alert-warning">
+                    <h6 className="alert-heading">
+                      ⚠️ Usuarios duplicados detectados:
+                    </h6>
+                    <ul className="mb-0">
+                      {validationSummary.conflicts.excluded > 0 && (
+                        <li>
+                          <strong>
+                            {validationSummary.conflicts.excluded}
+                          </strong>{" "}
+                          excluidos
+                        </li>
+                      )}
+                      {validationSummary.conflicts.overwritten > 0 && (
+                        <li>
+                          <strong>
+                            {validationSummary.conflicts.overwritten}
+                          </strong>{" "}
+                          sobrescritos
+                        </li>
+                      )}
+                      {validationSummary.conflicts.deleted > 0 && (
+                        <li>
+                          <strong>
+                            {validationSummary.conflicts.deleted}
+                          </strong>{" "}
+                          eliminados
+                        </li>
+                      )}
+                    </ul>
+                  </div>
                 )}
 
-                {/* LISTA DE USUARIOS CONFLICTIVOS */}
-                {validationSummary?.conflicts?.users && validationSummary.conflicts.users.length > 0 && (
+              {/* Usuarios conflictivos */}
+              {validationSummary?.conflicts?.users &&
+                validationSummary.conflicts.users.length > 0 && (
                   <div className="card mb-3">
                     <div className="card-header bg-warning bg-opacity-25">
-                      <strong>👥 Usuarios duplicados ({validationSummary.conflicts.users.length}):</strong>
+                      <strong>
+                        👥 Usuarios duplicados (
+                        {validationSummary.conflicts.users.length}):
+                      </strong>
                     </div>
                     <div className="card-body p-0">
                       <div className="table-responsive">
@@ -460,29 +511,45 @@ export default function ImportDB() {
                             <tr>
                               <th>Boleta</th>
                               <th>Email</th>
-                              <th>Nombre en CSV</th>
-                              <th>Nombre en BD</th>
-                              <th>Tipo de conflicto</th>
+                              <th>Nombre CSV</th>
+                              <th>Nombre BD</th>
+                              <th>Conflicto</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {validationSummary.conflicts.users.map((conflict, idx) => (
-                              <tr key={idx}>
-                                <td><code>{conflict.boleta}</code></td>
-                                <td><code className="small">{conflict.email}</code></td>
-                                <td>{conflict.name}</td>
-                                <td>{conflict.existingName}</td>
-                                <td>
-                                  {conflict.conflictType === "Duplicado por boleta y correo" ? (
-                                    <span className="badge bg-danger">Ambos duplicados</span>
-                                  ) : conflict.conflictType === "Duplicado por boleta" ? (
-                                    <span className="badge bg-warning text-dark">Boleta duplicada</span>
-                                  ) : (
-                                    <span className="badge bg-info text-dark">Correo duplicado</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
+                            {validationSummary.conflicts.users.map(
+                              (conflict, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    <code>{conflict.boleta}</code>
+                                  </td>
+                                  <td>
+                                    <code className="small">
+                                      {conflict.email}
+                                    </code>
+                                  </td>
+                                  <td>{conflict.name}</td>
+                                  <td>{conflict.existingName}</td>
+                                  <td>
+                                    {conflict.conflictType ===
+                                    "Duplicado por boleta y correo" ? (
+                                      <span className="badge bg-danger">
+                                        Ambos
+                                      </span>
+                                    ) : conflict.conflictType ===
+                                      "Duplicado por boleta" ? (
+                                      <span className="badge bg-warning text-dark">
+                                        Boleta
+                                      </span>
+                                    ) : (
+                                      <span className="badge bg-info text-dark">
+                                        Correo
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -490,95 +557,158 @@ export default function ImportDB() {
                   </div>
                 )}
 
-                {/* BOTONES DE ACCIÓN AL FINAL */}
-                <div className="d-flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleImport("exclude")}
-                    className="btn btn-secondary"
-                    disabled={loading}
-                  >
-                    ⏭️ Excluir duplicados
-                    <br />
-                    <small className="d-block" style={{ fontSize: "0.75rem" }}>
-                      {validationSummary?.valid > 0 
-                        ? `No importar los ${validationSummary.conflicts?.excluded || 0} existentes`
-                        : 'No importar ningún usuario (todos existen)'}
-                    </small>
-                  </button>
-                  <button
-                    onClick={() => handleImport("overwrite")}
-                    className="btn btn-warning"
-                    disabled={loading}
-                  >
-                    ✏️ Sobrescribir duplicados
-                    <br />
-                    <small className="d-block" style={{ fontSize: "0.75rem" }}>
-                      Actualizar datos de {validationSummary.conflicts?.users?.length || 0} usuarios existentes
-                    </small>
-                  </button>
-                  <button
-                    onClick={() => handleImport("delete")}
-                    className="btn btn-danger"
-                    disabled={loading}
-                  >
-                    🗑️ Eliminar y reemplazar
-                    <br />
-                    <small className="d-block" style={{ fontSize: "0.75rem" }}>
-                      Borrar y recrear {validationSummary.conflicts?.users?.length || 0} usuarios
-                    </small>
-                  </button>
-                  <button onClick={handleReset} className="btn btn-outline-secondary" disabled={loading}>
-                    ↺ Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
+              {/* Errores */}
+              {Array.isArray(validationResult.errors) &&
+                validationResult.errors.length > 0 && (
+                  <div className="mt-3">
+                    <h6 className="text-danger">
+                      ❌ Errores ({validationResult.errors.length}):
+                    </h6>
+                    <div className="table-responsive">
+                      <table className="table table-sm table-bordered">
+                        <thead className="table-light">
+                          <tr>
+                            <th>Línea</th>
+                            <th>Campos</th>
+                            <th>Mensajes</th>
+                            <th>Fila original</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {validationResult.errors.map((e, idx) => (
+                            <tr key={idx}>
+                              <td>
+                                <span className="badge bg-danger">
+                                  {e.line}
+                                </span>
+                              </td>
+                              <td>
+                                {Object.keys(e.errors).map((k) => (
+                                  <span
+                                    key={k}
+                                    className="badge bg-secondary me-1"
+                                  >
+                                    {k}
+                                  </span>
+                                ))}
+                              </td>
+                              <td>
+                                <ul className="mb-0 small">
+                                  {Object.entries(e.errors).map(
+                                    ([k, v]) => (
+                                      <li key={k}>{v}</li>
+                                    )
+                                  )}
+                                </ul>
+                              </td>
+                              <td>
+                                <code className="small">
+                                  {JSON.stringify(e.row)}
+                                </code>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
-            {/* Si no hay conflictos y todo es válido */}
-            {!showConflictOptions &&
-              validationSummary?.valid > 0 &&
-              validationSummary?.errors === 0 && (
-                <div className="alert alert-success mt-4">
-                  <h6 className="alert-heading">✅ Todos los registros son válidos</h6>
+              {/* Opciones conflicto */}
+              {showConflictOptions && (
+                <div className="alert alert-primary mt-4">
+                  <h6 className="alert-heading">🚀 Paso 2: Confirmar</h6>
                   <p className="mb-3">
-                    Se importarán <strong>{validationSummary.valid}</strong> usuarios sin conflictos.
+                    Elige acción para los usuarios duplicados:
                   </p>
-                  <button
-                    onClick={() => handleImport(conflictAction)}
-                    className="btn btn-success"
-                    disabled={loading}
-                  >
-                    {loading ? "Importando..." : "Importar ahora"}
-                  </button>
-                  <button
-                    onClick={handleReset}
-                    className="btn btn-outline-secondary ms-2"
-                    disabled={loading}
-                  >
-                    Cancelar
-                  </button>
+                  <div className="d-flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleImport("exclude")}
+                      className="btn btn-secondary"
+                      disabled={loading}
+                    >
+                      Excluir
+                    </button>
+                    <button
+                      onClick={() => handleImport("overwrite")}
+                      className="btn btn-warning"
+                      disabled={loading}
+                    >
+                      Sobrescribir
+                    </button>
+                    <button
+                      onClick={() => handleImport("delete")}
+                      className="btn btn-danger"
+                      disabled={loading}
+                    >
+                      Eliminar y reemplazar
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="btn btn-outline-secondary"
+                      disabled={loading}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
               )}
+
+              {/* Todo válido */}
+              {!showConflictOptions &&
+                validationSummary?.valid > 0 &&
+                validationSummary?.errors === 0 && (
+                  <div className="alert alert-success mt-4">
+                    <h6 className="alert-heading">✅ Listo para importar</h6>
+                    <p>
+                      Se importarán{" "}
+                      <strong>{validationSummary.valid}</strong> usuarios.
+                    </p>
+                    <button
+                      onClick={() => handleImport(conflictAction)}
+                      className="btn btn-success"
+                      disabled={loading}
+                    >
+                      {loading ? "Importando..." : "Importar ahora"}
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="btn btn-outline-secondary ms-2"
+                      disabled={loading}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+            </div>
           </div>
-        </div>
       )}
 
-      {/* Resultado final de importación */}
-      {importResult && (
+      {/* Resultado importación CSV/ZIP */}
+      {importResult && mode !== "photos" && (
         <div className="card shadow-sm border-success">
           <div className="card-body">
-            <h5 className="card-title text-success">✅ Importación completada exitosamente</h5>
-
+            <h5 className="card-title text-success">
+              ✅ Importación completada
+            </h5>
             <div className="row g-3 mb-3">
               <div className="col-md-4">
                 <div className="p-3 bg-success bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-success">{importSummary?.upserted || importSummary?.data?.created || 0}</h3>
+                  <h3 className="mb-0 text-success">
+                    {importSummary?.upserted ||
+                      importSummary?.data?.created ||
+                      0}
+                  </h3>
                   <small className="text-muted">Usuarios importados</small>
                 </div>
               </div>
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded text-center">
-                  <h3 className="mb-0">{importSummary?.total || importSummary?.data?.total || 0}</h3>
+                  <h3 className="mb-0">
+                    {importSummary?.total ||
+                      importSummary?.data?.total ||
+                      0}
+                  </h3>
                   <small className="text-muted">Total procesados</small>
                 </div>
               </div>
@@ -589,38 +719,117 @@ export default function ImportDB() {
                       (importSummary?.conflicts?.deleted || 0) +
                       (importSummary?.conflicts?.overwritten || 0)}
                   </h3>
-                  <small className="text-muted">Conflictos manejados</small>
+                  <small className="text-muted">Conflictos</small>
                 </div>
               </div>
             </div>
 
             {importSummary?.conflicts && (
               <div className="alert alert-info">
-                <h6>📊 Resumen de conflictos:</h6>
+                <h6>📊 Conflictos:</h6>
                 <ul className="mb-0">
                   {importSummary.conflicts.excluded > 0 && (
-                    <li>{importSummary.conflicts.excluded} usuarios excluidos</li>
+                    <li>{importSummary.conflicts.excluded} excluidos</li>
                   )}
                   {importSummary.conflicts.overwritten > 0 && (
-                    <li>{importSummary.conflicts.overwritten} usuarios sobrescritos</li>
+                    <li>{importSummary.conflicts.overwritten} sobrescritos</li>
                   )}
                   {importSummary.conflicts.deleted > 0 && (
-                    <li>{importSummary.conflicts.deleted} usuarios eliminados y reemplazados</li>
+                    <li>{importSummary.conflicts.deleted} eliminados</li>
                   )}
                 </ul>
               </div>
             )}
 
-            {/* Mensaje especial para importaciones ZIP */}
-            {importType === "zip" && importSummary?.photosProcessed !== undefined && (
-              <div className="alert alert-success">
-                📸 {importSummary.photosProcessed} fotos procesadas correctamente
-              </div>
-            )}
+            {mode === "zip" &&
+              importSummary?.photosProcessed !== undefined && (
+                <div className="alert alert-success">
+                  📸 {importSummary.photosProcessed} fotos procesadas
+                </div>
+              )}
 
             <div className="text-center mt-4">
               <button onClick={handleReset} className="btn btn-primary">
                 Nueva importación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resultado importación fotos */}
+      {photosResult && mode === "photos" && (
+        <div className="card shadow-sm border-info">
+          <div className="card-body">
+            <h5 className="card-title text-info">
+              🖼️ Importación de fotos completada
+            </h5>
+            <div className="row g-3 mb-3">
+              <div className="col-md-4">
+                <div className="p-3 bg-info bg-opacity-10 rounded text-center">
+                  <h3 className="mb-0 text-info">
+                    {photosResult.processed || 0}
+                  </h3>
+                  <small className="text-muted">Fotos asociadas</small>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded text-center">
+                  <h3 className="mb-0">
+                    {(photosResult.notMatched?.length || 0) +
+                      (photosResult.skipped?.length || 0)}
+                  </h3>
+                  <small className="text-muted">Sin usar / omitidas</small>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-success bg-opacity-10 rounded text-center">
+                  <h3 className="mb-0 text-success">
+                    {(photosResult?.processed || 0) +
+                      (photosResult?.skipped?.length || 0)}
+                  </h3>
+                  <small className="text-muted">Total archivos</small>
+                </div>
+              </div>
+            </div>
+
+            {photosResult.notMatched?.length > 0 && (
+              <div className="alert alert-warning">
+                <h6 className="alert-heading">⚠️ Boletas sin coincidencia:</h6>
+                <ul className="mb-0 small">
+                  {photosResult.notMatched.slice(0, 30).map((fn, idx) => (
+                    <li key={idx}>{fn}</li>
+                  ))}
+                </ul>
+                {photosResult.notMatched.length > 30 && (
+                  <small className="text-muted">
+                    ... {photosResult.notMatched.length - 30} más
+                  </small>
+                )}
+              </div>
+            )}
+
+            {photosResult.skipped?.length > 0 && (
+              <div className="alert alert-secondary">
+                <h6 className="alert-heading">🚫 Omitidas:</h6>
+                <ul className="mb-0 small">
+                  {photosResult.skipped.slice(0, 30).map((s, idx) => (
+                    <li key={idx}>
+                      {s.filename}: {s.reason}
+                    </li>
+                  ))}
+                </ul>
+                {photosResult.skipped.length > 30 && (
+                  <small className="text-muted">
+                    ... {photosResult.skipped.length - 30} más
+                  </small>
+                )}
+              </div>
+            )}
+
+            <div className="text-center mt-4">
+              <button onClick={handleReset} className="btn btn-info">
+                Nueva importación de fotos
               </button>
             </div>
           </div>
