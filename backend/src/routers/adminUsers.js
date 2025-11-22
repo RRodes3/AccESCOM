@@ -605,4 +605,121 @@ router.post('/users/bulk-action', auth, requireRole(['ADMIN']), async (req, res)
   }
 });
 
+/** PATCH /api/admin/users/:id
+ * Editar campos de un usuario (ADMIN)
+ */
+router.patch('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: 'ID inválido' });
+    }
+
+    const {
+      name,
+      firstName,
+      lastNameP,
+      lastNameM,
+      email,
+      contactEmail,
+      boleta,
+      institutionalType,
+      role,
+      isActive,
+      mustChangePassword
+    } = req.body || {};
+
+    const data = {};
+
+    if (typeof name === 'string') data.name = sanitizeName(name);
+    if (typeof firstName === 'string') data.firstName = sanitizeName(firstName);
+    if (typeof lastNameP === 'string') data.lastNameP = sanitizeName(lastNameP);
+    if (typeof lastNameM === 'string') data.lastNameM = sanitizeName(lastNameM);
+
+    if (typeof boleta === 'string') {
+      const b = boleta.trim();
+      if (!RE_BOLETA.test(b)) return res.status(400).json({ ok: false, error: 'Boleta inválida (10 dígitos).' });
+      data.boleta = b;
+    }
+
+    if (typeof email === 'string') {
+      const em = email.trim().toLowerCase();
+      if (!isInstitutional(em)) return res.status(400).json({ ok: false, error: 'Correo institucional inválido.' });
+      data.email = em;
+    }
+
+    if (typeof contactEmail === 'string' || contactEmail === null) {
+      if (contactEmail) {
+        const ce = contactEmail.trim().toLowerCase();
+        if (!RE_EMAIL_GENERIC.test(ce)) return res.status(400).json({ ok: false, error: 'Correo de contacto inválido.' });
+        data.contactEmail = ce;
+      } else {
+        data.contactEmail = null;
+      }
+    }
+
+    if (typeof institutionalType === 'string') {
+      const it = institutionalType.trim().toUpperCase();
+      if (!INSTITUTIONAL_TYPES.includes(it)) {
+        return res.status(400).json({ ok: false, error: 'institutionalType inválido (STUDENT|TEACHER|PAE).' });
+      }
+      data.institutionalType = it;
+    }
+
+    if (typeof role === 'string') {
+      const r = role.trim().toUpperCase();
+      const allowedRoles = ['ADMIN','USER','GUARD'];
+      if (!allowedRoles.includes(r)) return res.status(400).json({ ok: false, error: 'Rol inválido.' });
+      data.role = r;
+    }
+
+    if (typeof isActive === 'boolean') data.isActive = isActive;
+    if (typeof mustChangePassword === 'boolean') data.mustChangePassword = mustChangePassword;
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ ok: false, error: 'No hay campos para actualizar.' });
+    }
+
+    const current = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true, isActive: true, enabled: true }
+    });
+    if (!current) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+
+    const roleChangingToNonAdmin = data.role && data.role !== 'ADMIN' && current.role === 'ADMIN';
+    const deactivatingAdmin = data.isActive === false && current.role === 'ADMIN';
+    if (roleChangingToNonAdmin || deactivatingAdmin) {
+      const otherAdmins = await prisma.user.count({
+        where: { role: 'ADMIN', isActive: true, enabled: true, id: { not: current.id } }
+      });
+      if (otherAdmins === 0) {
+        return res.status(400).json({ ok: false, error: 'No puedes dejar el sistema sin un ADMIN activo.' });
+      }
+    }
+
+    if (data.role === 'GUARD') {
+      data.contactEmail = null;
+      data.institutionalType = null;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data,
+      select: {
+        id: true, boleta: true, name: true, firstName: true, lastNameP: true, lastNameM: true,
+        email: true, contactEmail: true, institutionalType: true, role: true, isActive: true,
+        mustChangePassword: true, enabled: true, createdAt: true
+      }
+    });
+
+    return res.json({ ok: true, user: updated });
+  } catch (err) {
+    console.error('❌ Error actualizando usuario:', err);
+    if (err.code === 'P2002') {
+      return res.status(409).json({ ok: false, error: 'Correo o boleta ya registrados.' });
+    }
+    return res.status(500).json({ ok: false, error: 'Error al actualizar.' });
+  }
+});
+
 module.exports = router;

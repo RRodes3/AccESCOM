@@ -49,3 +49,12 @@ export const getLastAccesses = (params = {}) => {
   const { take = 10, skip = 0 } = params;
   return api.get(`/qr/last-accesses?take=${take}&skip=${skip}`);
 };
+
+/**
+ * Actualizar usuario (ADMIN)
+ * @param {number} id - ID numérico del usuario
+ * @param {object} payload - Campos a actualizar (name, email, etc.)
+ */
+export function adminUpdateUser(id, payload) {
+  return api.patch(`/admin/users/${id}`, payload);
+}

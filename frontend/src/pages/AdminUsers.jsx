@@ -7,7 +7,8 @@ import {
   deleteUser,
   deactivateUser,
   restoreUser,
-  bulkUserAction
+  bulkUserAction,
+  updateUser          // ← nuevo
 } from '../services/admin';
 import { Link } from 'react-router-dom';
 import './AdminUsers.css';
@@ -62,6 +63,12 @@ export default function AdminUsers() {
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState('');
   const [bulkConfirm, setBulkConfirm] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editErrors, setEditErrors] = useState({});
+  const [editing, setEditing] = useState(false);
 
   const validate = (f) => {
     const e = {};
@@ -238,6 +245,75 @@ export default function AdminUsers() {
     }
   };
 
+  const openEdit = (u) => {
+    setEditUser(u);
+    setEditForm({
+      name: u.name || '',
+      firstName: u.firstName || '',
+      lastNameP: u.lastNameP || '',
+      lastNameM: u.lastNameM || '',
+      email: u.email || '',
+      contactEmail: u.contactEmail || '',
+      boleta: u.boleta || '',
+      role: u.role || 'USER',
+      institutionalType: u.institutionalType || '',
+      isActive: u.isActive,
+      mustChangePassword: !!u.mustChangePassword
+    });
+    setEditErrors({});
+    setEditOpen(true);
+  };
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditUser(null);
+  };
+
+  const validateEdit = (f) => {
+    const e = {};
+    if (f.boleta && !RE_BOLETA.test(f.boleta)) e.boleta = 'Boleta inválida';
+    if (!f.firstName || !RE_LETTERS.test(f.firstName)) e.firstName = 'Nombre inválido';
+    if (!f.lastNameP || !RE_LETTERS.test(f.lastNameP)) e.lastNameP = 'Apellido paterno inválido';
+    if (!f.lastNameM || !RE_LETTERS.test(f.lastNameM)) e.lastNameM = 'Apellido materno inválido';
+    if (!f.email || !isInstitutional(f.email)) e.email = 'Correo institucional inválido';
+    if (f.contactEmail && !/.+@.+\..+/.test(f.contactEmail)) e.contactEmail = 'Correo contacto inválido';
+    if (!['ADMIN','GUARD','USER'].includes(f.role)) e.role = 'Rol inválido';
+    if (f.role === 'USER' && f.institutionalType && !['STUDENT','TEACHER','PAE'].includes(f.institutionalType))
+      e.institutionalType = 'Sub-rol inválido';
+    return e;
+  };
+  const isEditValid = useMemo(() => Object.keys(validateEdit(editForm)).length === 0, [editForm]);
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    const errs = validateEdit(editForm);
+    setEditErrors(errs);
+    if (Object.keys(errs).length) return;
+    setEditing(true);
+    try {
+      const payload = {
+        name: editForm.name.trim(),
+        firstName: editForm.firstName.trim(),
+        lastNameP: editForm.lastNameP.trim(),
+        lastNameM: editForm.lastNameM.trim(),
+        email: editForm.email.trim().toLowerCase(),
+        contactEmail: editForm.contactEmail ? editForm.contactEmail.trim().toLowerCase() : null,
+        boleta: editForm.boleta.trim(),
+        role: editForm.role,
+        institutionalType: editForm.role === 'USER' ? (editForm.institutionalType || '') : undefined,
+        isActive: editForm.isActive,
+        mustChangePassword: editForm.mustChangePassword
+      };
+      await updateUser(editUser.id, payload);
+      await load();
+      closeEdit();
+    } catch (err) {
+      const m = err?.response?.data?.error || 'Error al actualizar';
+      alert(m);
+    } finally {
+      setEditing(false);
+    }
+  };
+
   const pages = Math.ceil(total / take) || 1;
   const page = Math.floor(skip / take) + 1;
 
@@ -401,6 +477,13 @@ export default function AdminUsers() {
                         </button>
                       </>
                     )}
+                    <button
+                      className="btn btn-sm btn-outline-primary"
+                      title="Editar usuario"
+                      onClick={() => openEdit(u)}
+                    >
+                      Editar
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -766,6 +849,138 @@ export default function AdminUsers() {
                   {bulkMode === 'hard' && 'Eliminar definitivamente'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editOpen && editUser && (
+        <div className="modal fade show" style={{ display:'block', background:'rgba(0,0,0,0.5)' }} onClick={closeEdit}>
+          <div className="modal-dialog modal-lg modal-dialog-centered" onClick={e => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Editar usuario</h5>
+                <button type="button" className="btn-close" onClick={closeEdit} />
+              </div>
+              <form onSubmit={submitEdit} noValidate>
+                <div className="modal-body">
+                  <div className="row g-2">
+                    <div className="col-md-4">
+                      <label className="form-label">Boleta</label>
+                      <input
+                        className={`form-control ${editErrors.boleta?'is-invalid':''}`}
+                        value={editForm.boleta}
+                        onChange={e=>setEditForm(f=>({...f,boleta:e.target.value.replace(/\D/g,'').slice(0,10)}))}
+                      />
+                      {editErrors.boleta && <div className="invalid-feedback d-block">{editErrors.boleta}</div>}
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label">Nombre(s)</label>
+                      <input
+                        className={`form-control ${editErrors.firstName?'is-invalid':''}`}
+                        value={editForm.firstName}
+                        onChange={e=>setEditForm(f=>({...f,firstName:e.target.value}))}
+                      />
+                      {editErrors.firstName && <div className="invalid-feedback d-block">{editErrors.firstName}</div>}
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label">Apellido paterno</label>
+                      <input
+                        className={`form-control ${editErrors.lastNameP?'is-invalid':''}`}
+                        value={editForm.lastNameP}
+                        onChange={e=>setEditForm(f=>({...f,lastNameP:e.target.value}))}
+                      />
+                      {editErrors.lastNameP && <div className="invalid-feedback d-block">{editErrors.lastNameP}</div>}
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label">Apellido materno</label>
+                      <input
+                        className={`form-control ${editErrors.lastNameM?'is-invalid':''}`}
+                        value={editForm.lastNameM}
+                        onChange={e=>setEditForm(f=>({...f,lastNameM:e.target.value}))}
+                      />
+                      {editErrors.lastNameM && <div className="invalid-feedback d-block">{editErrors.lastNameM}</div>}
+                    </div>
+                    <div className="col-md-5">
+                      <label className="form-label">Correo institucional</label>
+                      <input
+                        type="email"
+                        className={`form-control ${editErrors.email?'is-invalid':''}`}
+                        value={editForm.email}
+                        onChange={e=>setEditForm(f=>({...f,email:e.target.value}))}
+                      />
+                      {editErrors.email && <div className="invalid-feedback d-block">{editErrors.email}</div>}
+                    </div>
+                    {editForm.role !== 'GUARD' && (
+                      <div className="col-md-5">
+                        <label className="form-label">Correo contacto</label>
+                        <input
+                          type="email"
+                          className={`form-control ${editErrors.contactEmail?'is-invalid':''}`}
+                          value={editForm.contactEmail || ''}
+                          onChange={e=>setEditForm(f=>({...f,contactEmail:e.target.value}))}
+                        />
+                        {editErrors.contactEmail && <div className="invalid-feedback d-block">{editErrors.contactEmail}</div>}
+                      </div>
+                    )}
+                    <div className="col-md-3">
+                      <label className="form-label">Rol</label>
+                      <select
+                        className={`form-select ${editErrors.role?'is-invalid':''}`}
+                        value={editForm.role}
+                        onChange={e=>setEditForm(f=>({...f,role:e.target.value}))}
+                      >
+                        <option value="ADMIN">Administrador</option>
+                        <option value="GUARD">Guardia</option>
+                        <option value="USER">Usuario Institucional</option>
+                      </select>
+                      {editErrors.role && <div className="invalid-feedback d-block">{editErrors.role}</div>}
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label">Sub-rol</label>
+                      <select
+                        className="form-select"
+                        value={editForm.institutionalType}
+                        onChange={e=>setEditForm(f=>({...f,institutionalType:e.target.value}))}
+                        disabled={editForm.role !== 'USER'}
+                      >
+                        <option value="">(none)</option>
+                        <option value="STUDENT">Estudiante</option>
+                        <option value="TEACHER">Profesor</option>
+                        <option value="PAE">PAE</option>
+                      </select>
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label">Activo</label>
+                      <div className="form-check form-switch">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={editForm.isActive}
+                          onChange={e=>setEditForm(f=>({...f,isActive:e.target.checked}))}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label">Forzar cambio contraseña</label>
+                      <div className="form-check form-switch">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={editForm.mustChangePassword}
+                          onChange={e=>setEditForm(f=>({...f,mustChangePassword:e.target.checked}))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={closeEdit}>Cancelar</button>
+                  <button className="btn btn-primary" disabled={editing}>
+                    {editing ? 'Guardando…' : 'Guardar cambios'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

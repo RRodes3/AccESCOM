@@ -49,3 +49,8 @@ export function bulkUserAction(ids, mode='soft', options={}) {
     anonymizeEmail: options.anonymizeEmail !== false
   });
 }
+
+/** Actualiza usuario (ADMIN) */
+export function updateUser(id, payload) {
+  return api.patch(`/admin/users/${id}`, payload);
+}
