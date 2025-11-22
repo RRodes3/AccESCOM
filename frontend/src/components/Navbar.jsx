@@ -308,8 +308,7 @@ export default function Navbar() {
                           <li className="nav-item">
                             <Link
                               className="nav-link btn btn-sm btn-outline-light"
-                              to="/qr-access"
-                              style={{ pointerEvents: 'auto' }}
+                              to="/dashboard"
                             >
                               Mis QR
                             </Link>

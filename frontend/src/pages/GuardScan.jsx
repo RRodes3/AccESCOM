@@ -94,11 +94,19 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
   };
 
   // Construcción de URL completa de foto
-  const photoSrc = owner?.photoUrl
-    ? (owner.photoUrl.startsWith('http')
-        ? owner.photoUrl
-        : `${ASSETS_BASE_URL.replace(/\/+$/, '')}/${owner.photoUrl.replace(/^\/+/, '')}`)
-    : null;
+  function resolvePhoto(raw) {
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw)) return raw; // Cloudinary
+    let cleaned = raw.trim().replace(/^\/+/, '');
+    // Si ya empieza con photos/ lo dejamos, si no lo anteponemos
+    if (!/^photos\//.test(cleaned)) {
+      cleaned = 'photos/' + cleaned;
+    }
+    const base = ASSETS_BASE_URL.replace(/\/+$/, '');
+    return `${base}/${cleaned}`;
+  }
+
+  const photoSrc = resolvePhoto(owner?.photoUrl);
 
   return (
     <div className="container mt-3 scan-result-card" style={{ maxWidth: 560 }}>
