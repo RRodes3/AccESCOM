@@ -68,6 +68,12 @@ export default function PerfilUsuario() {
       setEmailError('Ingresa un correo de contacto.');
       return;
     }
+
+    // Confirmación antes de proceder
+    if (!window.confirm('¿Seguro que quieres actualizar tu correo de contacto?')) {
+      return;
+    }
+
     setSavingEmail(true);
     try {
       const res = await updateContactEmail(val);
@@ -246,7 +252,10 @@ export default function PerfilUsuario() {
       <div className="d-flex justify-content-end mb-3">
         <button
           className="btn btn-outline-secondary btn-sm"
-          onClick={() => window.location.href = '/change-password'}
+          onClick={() => {
+            if (!window.confirm('¿Seguro que quieres cambiar tu contraseña?')) return;
+            window.location.href = '/change-password';
+          }}
         >
           Cambiar contraseña
         </button>
@@ -384,7 +393,7 @@ export default function PerfilUsuario() {
             type="button"
             className="btn btn-sm btn-outline-danger"
             onClick={async () => {
-              if (!confirm('¿Eliminar foto de perfil?')) return;
+              if (!window.confirm('¿Eliminar foto de perfil?')) return;
               try {
                 const { data } = await api.delete(`/admin/import/photos/${user.boleta || user.email}`);
                 if (data.ok) {
