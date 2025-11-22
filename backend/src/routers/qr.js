@@ -15,20 +15,28 @@ const router = express.Router();
    ========================================================= */
 router.get('/my-access', auth, async (req, res) => {
   try {
-    const userId = req.user.id; // ID del usuario autenticado
+    const userId = req.user.id;
 
-    const logs = await prisma.qRAttempt.findMany({
-      where: { userId },                 // Solo los del usuario
-      orderBy: { attemptedAt: 'desc' },  // Últimos primero
-      take: 20,                          // Límite de 20 registros
+    // Usar AccessEvent en lugar de QRAttempt para obtener más información
+    const logs = await prisma.accessEvent.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: {
+        guard: {
+          select: {
+            name: true,
+            firstName: true,
+            lastNameP: true
+          }
+        }
+      }
     });
 
     res.json({ ok: true, logs });
   } catch (err) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, message: 'Error obteniendo accesos' });
+    res.status(500).json({ ok: false, message: 'Error obteniendo accesos' });
   }
 });
 

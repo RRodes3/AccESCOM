@@ -2,13 +2,11 @@
 import { useEffect, useState } from "react";
 import { api, getMyAccessLogs, updateContactEmail } from "../services/api";
 
-// Misma lógica que usamos en GuardScan.jsx
 const API_BASE_URL = api.defaults.baseURL || "/api";
 const ASSETS_BASE_URL =
   process.env.REACT_APP_ASSETS_BASE_URL ||
   API_BASE_URL.replace(/\/api\/?$/, "");
 
-// Función para traducir tipo institucional
 const translateInstitutionalType = (type) => {
   const translations = {
     STUDENT: 'Estudiante',
@@ -28,16 +26,12 @@ export default function PerfilUsuario() {
   const [emailError, setEmailError] = useState('');
   const [emailSuccess, setEmailSuccess] = useState('');
 
-  // 🔹 1) Cargar usuario logueado
   useEffect(() => {
-    // Ajusta esta clave al nombre que tú usas
-    // (por ejemplo "usuario", "user", etc.)
     const stored = localStorage.getItem("usuario") || localStorage.getItem("user");
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
         setUser(parsed);
-
         if (parsed?.contactEmail) {
           setContactEmailDraft(parsed.contactEmail);
         }
@@ -45,12 +39,8 @@ export default function PerfilUsuario() {
         console.warn("No se pudo parsear el usuario del localStorage");
       }
     }
-
-    // Si quieres, como refuerzo, podrías llamar a /auth/me aquí:
-    // api.get("/auth/me").then(res => setUser(res.data.user));
   }, []);
 
-  // 🔹 2) Cargar mis accesos (endpoint /qr/my-access que ya hiciste)
   useEffect(() => {
     const fetchLogs = async () => {
       try {
@@ -58,7 +48,6 @@ export default function PerfilUsuario() {
         if (res.data?.ok) {
           setLogs(res.data.logs || []);
         } else if (Array.isArray(res.data)) {
-          // por si tu backend devuelve directamente el array
           setLogs(res.data);
         }
       } catch (err) {
@@ -129,7 +118,6 @@ export default function PerfilUsuario() {
       .filter(Boolean)
       .join(" ") || user.name || "—";
 
-  // construir URL de foto con el mismo esquema del scan
   const photoSrc = user.photoUrl ? `${ASSETS_BASE_URL}${user.photoUrl}` : null;
 
   return (
@@ -215,18 +203,21 @@ export default function PerfilUsuario() {
                       onChange={(e) => setContactEmailDraft(e.target.value)}
                       placeholder="correo@ejemplo.com"
                       disabled={savingEmail}
+                      autoComplete="off"
                     />
                     {emailError && <div className="text-danger small mb-1">{emailError}</div>}
                     {emailSuccess && <div className="text-success small mb-1">{emailSuccess}</div>}
                     <div className="d-flex gap-2">
                       <button
+                        type="button"
                         className="btn btn-sm btn-primary"
                         onClick={handleSaveContactEmail}
                         disabled={savingEmail}
                       >
-                        {savingEmail ? 'Guardando...' : 'Guardar'}
+                        {savingEmail ? 'Guardando...' : 'Aceptar'}
                       </button>
                       <button
+                        type="button"
                         className="btn btn-sm btn-secondary"
                         onClick={handleCancelEmail}
                         disabled={savingEmail}
@@ -261,8 +252,8 @@ export default function PerfilUsuario() {
 
       <h4 className="mt-2 mb-3">Mis últimos accesos</h4>
 
-      {/* Tabla de últimos accesos */}
-      <div className="card">
+      {/* Tabla de últimos accesos con diseño mejorado */}
+      <div className="card" style={{ backgroundColor: '#f8f9fa', border: '1px solid #dee2e6' }}>
         <div className="card-body">
           {loadingLogs ? (
             <p>Cargando registros...</p>
@@ -272,33 +263,74 @@ export default function PerfilUsuario() {
             </p>
           ) : (
             <div className="table-responsive">
-              <table className="table table-hover align-middle">
-                <thead>
+              <table className="table table-striped align-middle mb-0" style={{ backgroundColor: 'white' }}>
+                <thead style={{ backgroundColor: '#e9ecef' }}>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Acción</th>
-                    <th>Detalle</th>
+                    <th style={{ fontWeight: 600 }}>Fecha</th>
+                    <th style={{ fontWeight: 600 }}>Tipo</th>
+                    <th style={{ fontWeight: 600 }}>Acción</th>
+                    <th style={{ fontWeight: 600 }}>Detalle</th>
                   </tr>
                 </thead>
                 <tbody>
                   {logs.map((log) => {
+                    // Formatear fecha correctamente
                     const created = new Date(log.createdAt);
-                    const tipo =
-                      log.qr?.kind === "ENTRY"
-                        ? "Entrada"
-                        : log.qr?.kind === "EXIT"
-                        ? "Salida"
-                        : log.kind || "-";
+                    const fechaFormateada = !isNaN(created.getTime()) 
+                      ? created.toLocaleString("es-MX", {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        })
+                      : '—';
 
-                    const accion = log.action || log.result || "-";
+                    // Tipo de acceso (ENTRY/EXIT)
+                    const tipo = log.accessType === "ENTRY" 
+                      ? "Entrada" 
+                      : log.accessType === "EXIT"
+                      ? "Salida"
+                      : "—";
+
+                    // Resultado con colores
+                    const resultado = log.result || "—";
+                    let colorClass = '';
+                    let backgroundColor = '';
+                    
+                    if (resultado === 'ALLOWED') {
+                      colorClass = 'text-white';
+                      backgroundColor = '#28a745'; // Verde
+                    } else if (resultado.includes('DENIED') || resultado.includes('INVALID') || resultado.includes('EXPIRED')) {
+                      colorClass = 'text-white';
+                      backgroundColor = '#dc3545'; // Rojo
+                    } else {
+                      colorClass = 'text-dark';
+                      backgroundColor = '#6c757d'; // Gris
+                    }
 
                     return (
                       <tr key={log.id}>
-                        <td>{created.toLocaleString("es-MX")}</td>
-                        <td>{tipo}</td>
-                        <td>{accion}</td>
-                        <td>{log.reason || "—"}</td>
+                        <td style={{ fontSize: '0.9rem' }}>{fechaFormateada}</td>
+                        <td style={{ fontSize: '0.9rem' }}>
+                          <span className="badge bg-secondary">{tipo}</span>
+                        </td>
+                        <td>
+                          <span 
+                            className={`badge ${colorClass}`}
+                            style={{ 
+                              backgroundColor,
+                              padding: '0.5rem 0.75rem',
+                              fontSize: '0.85rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            {resultado}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.9rem' }}>{log.reason || "—"}</td>
                       </tr>
                     );
                   })}
