@@ -1,9 +1,9 @@
 // backend/src/routers/qr.js
 import express from 'express';
-import auth from '../middleware/auth';
-import requireRole from '../middleware/requireRole';
-import prisma from '../prisma';
-import { sendAccessNotificationEmail } from '../utils/mailer';
+import auth from '../middleware/auth.js';
+import requireRole from '../middleware/requireRole.js';
+import prisma from '../prisma/index.js'; // o '../prisma.js' según tengas el archivo
+import { sendAccessNotificationEmail } from '../utils/mailer.js';
 
 const router = express.Router();
 
