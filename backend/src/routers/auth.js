@@ -126,6 +126,12 @@ router.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Credenciales incorrectas' });
 
+    // Reiniciar timestamp de actividad al iniciar sesión
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastActivityAt: new Date() }
+    });
+
     const token = jwt.sign({ id: user.id, role: user.role }, SECRET, {
       expiresIn: '7d'
     });

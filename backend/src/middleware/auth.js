@@ -48,7 +48,8 @@ module.exports = async function auth(req, res, next) {
     // Inactividad
     const now = Date.now();
     if (user.lastActivityAt) {
-      const diffMin = (now - new Date(user.lastActivityAt).getTime()) / 60000;
+      let diffMin = (now - new Date(user.lastActivityAt).getTime()) / 60000;
+      if (diffMin < 0) diffMin = 0; // defensa ante desajuste de reloj
       // Ignora expiración si acaba de iniciar (menos de 0.1 min ~ 6 seg)
       if (diffMin > IDLE_MINUTES && diffMin > 0.1) {
         res.clearCookie('token', cookieClearOpts());
