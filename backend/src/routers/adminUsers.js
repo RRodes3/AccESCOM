@@ -434,9 +434,9 @@ router.get('/report', auth, requireRole(['ADMIN']), async (req, res) => {
     }
 
     if (subjectType === 'INSTITUTIONAL') {
-      where.userId = { not: null };
+      where.subjectType = 'INSTITUTIONAL';
     } else if (subjectType === 'GUEST') {
-      where.guestId = { not: null };
+      where.subjectType = 'GUEST';
     }
 
     if (institutionalType) {
@@ -444,22 +444,14 @@ router.get('/report', auth, requireRole(['ADMIN']), async (req, res) => {
     }
 
     if (accessType === 'ENTRY' || accessType === 'EXIT') {
-      where.kind = accessType;
+      where.accessType = accessType;
     }
 
-    if (result === 'ALLOWED') {
-      where.action = 'VALIDATE_ALLOW';
-    } else if (result === 'DENIED') {
-      where.action = 'VALIDATE_DENY';
-    } else if (result === 'EXPIRED_QR') {
-      where.action = 'VALIDATE_DENY';
-      where.reason = 'QR expirado';
-    } else if (result === 'INVALID_QR') {
-      where.action = 'VALIDATE_DENY';
-      where.reason = { not: 'QR expirado' };
+    if (result) {
+      where.result = result;
     }
 
-    const rows = await prisma.accessLog.findMany({
+    const rows = await prisma.accessEvent.findMany({
       where,
       include: {
         user: {
@@ -490,13 +482,6 @@ router.get('/report', auth, requireRole(['ADMIN']), async (req, res) => {
           select: {
             id: true,
             name: true,
-          },
-        },
-        qr: {
-          select: {
-            id: true,
-            kind: true,
-            code: true,
           },
         },
       },

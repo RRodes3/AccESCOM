@@ -74,18 +74,20 @@ export default function AccessReport() {
               .filter(Boolean)
               .join(' ') || row.user?.name || '—';
 
-        let accion = row.action;
-        if (accion === 'VALIDATE_ALLOW') accion = 'Permitido';
-        else if (accion === 'VALIDATE_DENY') accion = 'Denegado';
-        else if (accion === 'ISSUE') accion = 'Código generado';
+        // Mapear resultado a texto español
+        let accion = row.result || '—';
+        if (accion === 'ALLOWED') accion = 'Permitido';
+        else if (accion === 'DENIED') accion = 'Denegado';
+        else if (accion === 'INVALID_QR') accion = 'QR inválido';
+        else if (accion === 'EXPIRED_QR') accion = 'QR expirado';
 
         return {
           id: row.id,
           createdAt: row.createdAt,
           tipo:
-            row.qr?.kind === 'ENTRY'
+            row.accessType === 'ENTRY'
               ? 'Entrada'
-              : row.qr?.kind === 'EXIT'
+              : row.accessType === 'EXIT'
               ? 'Salida'
               : '—',
           accion,
@@ -99,7 +101,7 @@ export default function AccessReport() {
           email: row.user?.email || '—',
           contactEmail: row.user?.contactEmail || '—',
           curp: row.guest?.curp || '—',
-          reason: row.guest?.reason || row.reason || '—',
+          reason: row.reason || '—',
           guard: row.guard?.name || '—',
         };
       }),
@@ -283,8 +285,8 @@ export default function AccessReport() {
             onChange={(e) => setInstitutionalType(e.target.value)}
           >
             <option value="">Todos</option>
-            <option value="STUDENT">Student</option>
-            <option value="TEACHER">Teacher</option>
+            <option value="STUDENT">Estudiante</option>
+            <option value="TEACHER">Profesor</option>
             <option value="PAE">PAE</option>
           </select>
         </div>

@@ -89,7 +89,7 @@ function ScanResultCard({ ok, kind, owner, reason, onScanAgain, onBack }) {
 
   const institutionalLabel = {
     STUDENT: 'Alumno',
-    TEACHER: 'Docente',
+    TEACHER: 'Profesor', 
     PAE: 'PAE',
   };
 
