@@ -65,25 +65,23 @@ function uploadBufferToCloudinary(buffer, publicId) {
 
 /* =========================================================
    POST /api/admin/import-photos (UNIFICADO)
-   - Si viene campo "file" + es ZIP → importación masiva
-   - Si viene campo "file" + boleta como nombre → individual masiva
-   - Si viene campo "photo" + body.boletaOrEmail → individual desde perfil
    ========================================================= */
 router.post(
   '/admin/import-photos',
   auth,
   requireRole(['ADMIN']),
-  (req, res, next) => {
-    // Multer dinámico: acepta "photo" o "file"
-    const uploader = upload.single(req.body.boletaOrEmail ? 'photo' : 'file');
-    uploader(req, res, next);
-  },
+  upload.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'file', maxCount: 1 }
+  ]),
   async (req, res) => {
     const { boletaOrEmail } = req.body;
-    const file = req.file;
+    
+    // Detectar qué campo se usó
+    const file = req.files?.photo?.[0] || req.files?.file?.[0];
 
     if (!file) {
-      return res.status(400).json({ ok: false, error: 'Falta archivo' });
+      return res.status(400).json({ ok: false, error: 'Falta archivo (campo "photo" o "file")' });
     }
 
     const ext = path.extname(file.originalname).toLowerCase();
