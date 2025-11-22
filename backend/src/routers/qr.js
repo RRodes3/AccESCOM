@@ -5,6 +5,7 @@ const requireRole = require('../middleware/requireRole');
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const { sendAccessNotificationEmail } = require('../utils/mailer');
+const cloudinary = require('../utils/cloudinary');
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -152,7 +153,7 @@ function buildOwner(pass) {
       email: u.email,
       contactEmail: u.contactEmail || null,
       institutionalType: u.institutionalType || null,
-      photoUrl: u.photoUrl || null,
+      photoUrl: buildPhotoUrl(u), // antes: u.photoUrl || null
     };
   }
   if (pass.guest) {
@@ -379,6 +380,7 @@ router.post(
               accessState: true,
               institutionalType: true,
               photoUrl: true,
+              photoPublicId: true,  // <- AGREGAR
             },
           },
           guest: {
@@ -1098,6 +1100,7 @@ router.post(
               accessState: true,
               institutionalType: true,
               photoUrl: true,
+              photoPublicId: true,  // <- AGREGAR
             },
           },
           guest: {
@@ -1254,3 +1257,29 @@ router.post(
    Export
    ========================================================= */
 module.exports = router;
+
+function buildPhotoUrl(user) {
+  if (!user) return null;
+  
+  // Si tiene photoPublicId, usar Cloudinary
+  if (user.photoPublicId) {
+    return cloudinary.url(user.photoPublicId, {
+      transformation: [
+        { width: 400, height: 400, crop: 'fill', gravity: 'face' }
+      ],
+      secure: true
+    });
+  }
+  
+  // Si tiene photoUrl legacy, construir URL del servidor
+  if (user.photoUrl) {
+    let path = user.photoUrl.trim().replace(/^\/+/, '');
+    if (!/^photos\//.test(path)) {
+      path = 'photos/' + path;
+    }
+    const baseUrl = process.env.APP_BASE_URL || 'http://localhost:5000';
+    return `${baseUrl.replace(/\/+$/, '')}/${path}`;
+  }
+  
+  return null;
+}
