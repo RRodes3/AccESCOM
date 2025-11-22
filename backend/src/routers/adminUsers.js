@@ -638,6 +638,7 @@ router.patch('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
       lastNameM,
       email,
       contactEmail,
+      boleta,
       institutionalType,
       isActive,
       mustChangePassword,
@@ -652,7 +653,7 @@ router.patch('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
     }
 
     const user = await prisma.user.update({
-      where: { id: userId },
+      where: { id },  // ← CORREGIDO AQUÍ
       data,
     });
 
