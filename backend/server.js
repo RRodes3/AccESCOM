@@ -23,16 +23,21 @@ app.use(
 // ---------- Rutas API ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-// Si quieres que sea /api/admin/import/photos
 const importPhotosRouter = require('./src/routers/importPhotos');
-app.use('/api/admin', importPhotosRouter);
-app.use('/api/admin', require('./src/routers/importPhotos'));
+
 app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
-app.use('/api/qr', require('./src/routers/qr'));          // sin .default
-app.use('/api/guest', require('./src/routers/guest'));    // igual (CommonJS)
+app.use('/api/qr', require('./src/routers/qr'));
+app.use('/api/guest', require('./src/routers/guest'));
 app.use('/api/admin/import', require('./src/routers/adminImport'));
-app.use('/api/import', require('./src/routers/adminImport')); // Ruta alternativa más corta
+app.use('/api/import', require('./src/routers/adminImport')); // ruta alternativa existente
+
+// Montaje principal para fotos (Cloudinary)
+// Endpoint final: POST /api/import-photos
+app.use('/api', importPhotosRouter);
+
+// (Opcional) Si quieres también versión con prefijo admin:
+// app.use('/api/admin', importPhotosRouter);
 
 // Servir fotos de usuarios (photoUrl tipo /photos/archivo.jpg)
 app.use(
@@ -69,4 +74,14 @@ setupDailyResetJobs({
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
+});
+
+// POST /api/import-photos
+router.post('/import-photos', auth, requireRole(['ADMIN']), upload.single('photo'), async (req, res) => {
+  // ...
+});
+
+// DELETE /api/import-photos/:boletaOrEmail
+router.delete('/import-photos/:boletaOrEmail', auth, requireRole(['ADMIN']), async (req, res) => {
+  // ...
 });
