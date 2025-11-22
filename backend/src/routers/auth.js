@@ -246,7 +246,7 @@ router.post('/login', async (req, res) => {
         mustChangePassword: true,
         institutionalType: true,
         photoUrl: true,
-        photoPublicId: true,   // <— nuevo
+        photoPublicId: true,
         isActive: true,
       },
     });
@@ -462,7 +462,7 @@ router.post('/change-password', auth, async (req, res) => {
   }
 });
 
-// Actualizar correo de contacto del usuario autenticado
+/* CONTACT EMAIL */
 router.put('/contact-email', auth, async (req, res) => {
   try {
     const { contactEmail } = req.body;
@@ -593,6 +593,6 @@ module.exports = async function auth(req, res, next) {
     return next();
   } catch (e) {
     console.error('AUTH MIDDLEWARE ERROR:', e);
-    return res.status(401).json({ error: 'No autenticado' });
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };

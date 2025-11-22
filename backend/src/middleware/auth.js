@@ -81,6 +81,7 @@ module.exports = async function auth(req, res, next) {
       mustChangePassword: user.mustChangePassword,
       institutionalType: user.institutionalType,
       photoUrl: user.photoUrl,
+      contactEmail: user.contactEmail, // ✅ Agregado
     };
 
     return next();
