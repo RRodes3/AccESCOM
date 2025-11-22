@@ -1,19 +1,28 @@
 // backend/src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
-
 const prisma = new PrismaClient();
 
-// Minutos máximos de inactividad antes de expirar sesión
-const IDLE_MINUTES = Number(process.env.SESSION_IDLE_MINUTES || '15');
+// Sanitizar minutos de inactividad
+function resolveIdleMinutes(raw) {
+  if (!raw || typeof raw !== 'string') return 15;
+  const trimmed = raw.trim();
+  if (!trimmed) return 15;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 1) return 15;
+  return n;
+}
+
+const IDLE_MINUTES = resolveIdleMinutes(process.env.SESSION_IDLE_MINUTES);
+
+// Opcional: solo en desarrollo
+if (process.env.NODE_ENV !== 'production') {
+  console.log('[AUTH] Inactividad configurada en', IDLE_MINUTES, 'minutos');
+}
 
 module.exports = async function auth(req, res, next) {
   try {
-    // Soporte para cookie o header Authorization
-    const token =
-      req.cookies?.token ||
-      req.header('Authorization')?.replace('Bearer ', '');
-
+    const token = req.cookies?.token || req.header('Authorization')?.replace('Bearer ', '');
     if (!token) {
       return res.status(401).json({ error: 'No autenticado' });
     }
@@ -21,64 +30,41 @@ module.exports = async function auth(req, res, next) {
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (e) {
+    } catch {
       return res.status(401).json({ error: 'Token inválido o expirado' });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.id },
-    });
-
+    const user = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!user) {
-      // Limpia cookie si el usuario ya no existe
-      res.clearCookie('token', {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-      });
+      res.clearCookie('token', cookieClearOpts());
       return res.status(401).json({ error: 'Usuario no encontrado' });
     }
 
-    // Usuario deshabilitado
     if (!user.isActive) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-      });
-      return res.status(403).json({
-        error: 'Tu cuenta ha sido deshabilitada. Contacta al administrador.',
-      });
+      res.clearCookie('token', cookieClearOpts());
+      return res.status(403).json({ error: 'Tu cuenta ha sido deshabilitada. Contacta al administrador.' });
     }
 
-    // ⏱️ Validar inactividad
-    const now = new Date();
+    // Inactividad
+    const now = Date.now();
     if (user.lastActivityAt) {
-      const diffMs = now - user.lastActivityAt;
-      const diffMin = diffMs / 60000;
-      if (diffMin > IDLE_MINUTES) {
-        res.clearCookie('token', {
-          httpOnly: true,
-          sameSite: 'lax',
-          secure: process.env.NODE_ENV === 'production',
-        });
-        return res
-          .status(401)
-          .json({ error: 'Sesión expirada por inactividad' });
+      const diffMin = (now - new Date(user.lastActivityAt).getTime()) / 60000;
+      // Ignora expiración si acaba de iniciar (menos de 0.1 min ~ 6 seg)
+      if (diffMin > IDLE_MINUTES && diffMin > 0.1) {
+        res.clearCookie('token', cookieClearOpts());
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[AUTH] Expirando por inactividad. diffMin=${diffMin.toFixed(2)} limite=${IDLE_MINUTES}`);
+        }
+        return res.status(401).json({ error: 'Sesión expirada por inactividad' });
       }
     }
 
-    // Actualizar lastActivityAt en background (sin bloquear la petición)
-    prisma.user
-      .update({
-        where: { id: user.id },
-        data: { lastActivityAt: now },
-      })
-      .catch((e) =>
-        console.error('Error actualizando lastActivityAt:', e?.message || e)
-      );
+    // Actualizar último activity (no bloquear en error)
+    prisma.user.update({
+      where: { id: user.id },
+      data: { lastActivityAt: new Date() }
+    }).catch(e => console.error('Error actualizando lastActivityAt:', e));
 
-    // Datos que el resto de las rutas usarán
     req.user = {
       id: user.id,
       role: user.role,
@@ -89,12 +75,20 @@ module.exports = async function auth(req, res, next) {
       mustChangePassword: user.mustChangePassword,
       institutionalType: user.institutionalType,
       photoUrl: user.photoUrl,
-      contactEmail: user.contactEmail,
+      contactEmail: user.contactEmail
     };
 
     return next();
   } catch (e) {
     console.error('AUTH MIDDLEWARE ERROR:', e);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    return res.status(401).json({ error: 'No autenticado' });
   }
 };
+
+function cookieClearOpts() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  };
+}
