@@ -182,4 +182,164 @@ router.put('/contact-email', auth, async (req, res) => {
   }
 });
 
+// --- Recuperación de contraseña ---
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email requerido' });
+
+    const normEmail = String(email).trim().toLowerCase();
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+
+    const key = `${ip}_${normEmail}`;
+    const now = Date.now();
+    const entry = forgotAttemptsMap.get(key);
+
+    if (entry) {
+      const elapsed = now - entry.first;
+      if (elapsed < FORGOT_WINDOW_MS && entry.count >= FORGOT_MAX_ATTEMPTS) {
+        const remainMin = Math.ceil((FORGOT_WINDOW_MS - elapsed) / 60000);
+        return res.status(429).json({ error: `Demasiados intentos. Intenta en ${remainMin} minuto(s).` });
+      }
+      if (elapsed >= FORGOT_WINDOW_MS) {
+        forgotAttemptsMap.delete(key);
+      }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: normEmail },
+      select: {
+        id: true, email: true, contactEmail: true,
+        name: true, firstName: true, lastNameP: true, lastNameM: true,
+        isActive: true
+      }
+    });
+
+    const successMsg = 'Si el correo existe, recibirás un enlace de recuperación.';
+
+    if (!user || !user.isActive) {
+      if (!entry) forgotAttemptsMap.set(key, { first: now, count: 1 });
+      else entry.count++;
+      return res.json({ ok: true, message: successMsg });
+    }
+
+    await prisma.passwordReset.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      data: { expiresAt: new Date() }
+    });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt,
+        ip,
+        userAgent: req.headers['user-agent'] || null
+      }
+    });
+
+    const recipientEmail = user.contactEmail || user.email;
+    const userName = [user.firstName, user.lastNameP, user.lastNameM].filter(Boolean).join(' ') || user.name || 'Usuario';
+    const resetUrl = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+
+    console.log(`📧 Enviando reset a: ${recipientEmail}`);
+    console.log(`🔗 Link: ${resetUrl}`);
+
+    await sendPasswordResetEmail({
+      to: recipientEmail,
+      name: userName,
+      resetUrl
+    });
+
+    if (!entry) forgotAttemptsMap.set(key, { first: now, count: 1 });
+    else entry.count++;
+
+    return res.json({ ok: true, message: successMsg });
+  } catch (e) {
+    console.error('FORGOT PASSWORD ERROR:', e);
+    return res.status(500).json({ error: 'Error al procesar solicitud' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token y contraseña requeridos' });
+    if (!RE_PASSWORD.test(newPassword)) {
+      return res.status(400).json({ error: 'Contraseña no cumple requisitos.' });
+    }
+
+    const record = await prisma.passwordReset.findUnique({
+      where: { token },
+      include: { user: { select: { id: true, isActive: true } } }
+    });
+
+    if (!record) return res.status(400).json({ error: 'Token inválido' });
+    if (record.usedAt) return res.status(400).json({ error: 'Token ya utilizado' });
+    if (new Date() > record.expiresAt) return res.status(400).json({ error: 'Token expirado' });
+    if (!record.user.isActive) return res.status(403).json({ error: 'Cuenta deshabilitada' });
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: record.userId },
+      data: { password: hash, mustChangePassword: false }
+    });
+    await prisma.passwordReset.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() }
+    });
+
+    console.log(`✅ Reset completado para user ${record.userId}`);
+    return res.json({ ok: true, message: 'Contraseña actualizada.' });
+  } catch (e) {
+    console.error('RESET PASSWORD ERROR:', e);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+router.post('/change-password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Faltan campos' });
+    }
+    if (!RE_PASSWORD.test(newPassword)) {
+      return res.status(400).json({ error: 'Contraseña nueva no válida.' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, password: true, isActive: true }
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(403).json({ error: 'Usuario inválido' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hash, mustChangePassword: false }
+    });
+
+    console.log(`✅ Change password user ${user.id}`);
+    return res.json({ ok: true, message: 'Contraseña cambiada.' });
+  } catch (e) {
+    console.error('CHANGE PASSWORD ERROR:', e);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
 module.exports = router;
