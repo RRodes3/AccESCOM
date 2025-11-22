@@ -246,6 +246,7 @@ router.post('/login', async (req, res) => {
         mustChangePassword: true,
         institutionalType: true,
         photoUrl: true,
+        photoPublicId: true,   // <— nuevo
         isActive: true,
       },
     });

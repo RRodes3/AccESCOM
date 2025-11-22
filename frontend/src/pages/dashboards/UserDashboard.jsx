@@ -91,17 +91,11 @@ export default function UserDashboard() {
         <>
           <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3 text-center">
             <p className="mb-3">Elige la acción que desees realizar:</p>
-            <div className="d-flex gap-3 justify-content-center flex-wrap">
-              <button 
-                className="w-full max-w-[300px] px-4 py-3 text-white bg-blue-600 rounded-lg text-center text-lg font-semibold hover:bg-blue-700 transition-colors"
-                onClick={() => openKind('ENTRY')}
-              >
+            <div className="d-flex gap-3 justify-content-center">
+              <button className="btn btn-primary" onClick={() => openKind('ENTRY')}>
                 Mostrar QR de entrada
               </button>
-              <button 
-                className="w-full max-w-[300px] px-4 py-3 text-white bg-blue-600 rounded-lg text-center text-lg font-semibold hover:bg-blue-700 transition-colors"
-                onClick={() => openKind('EXIT')}
-              >
+              <button className="btn btn-primary" onClick={() => openKind('EXIT')}>
                 Mostrar QR de salida
               </button>
             </div>

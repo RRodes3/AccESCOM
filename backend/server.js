@@ -23,14 +23,16 @@ app.use(
 // ---------- Rutas API ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+// Si quieres que sea /api/admin/import/photos
 const importPhotosRouter = require('./src/routers/importPhotos');
+app.use('/api/admin', importPhotosRouter);
+app.use('/api/admin', require('./src/routers/importPhotos'));
 app.use('/api/auth', require('./src/routers/auth'));
 app.use('/api/admin', require('./src/routers/adminUsers'));
 app.use('/api/qr', require('./src/routers/qr'));          // sin .default
 app.use('/api/guest', require('./src/routers/guest'));    // igual (CommonJS)
 app.use('/api/admin/import', require('./src/routers/adminImport'));
 app.use('/api/import', require('./src/routers/adminImport')); // Ruta alternativa más corta
-app.use('/api/admin', importPhotosRouter);
 
 // Servir fotos de usuarios (photoUrl tipo /photos/archivo.jpg)
 app.use(

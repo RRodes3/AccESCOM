@@ -118,7 +118,9 @@ export default function PerfilUsuario() {
       .filter(Boolean)
       .join(" ") || user.name || "—";
 
-  const photoSrc = user.photoUrl ? `${ASSETS_BASE_URL}${user.photoUrl}` : null;
+  const photoSrc = user.photoUrl
+    ? (user.photoUrl.startsWith('http') ? user.photoUrl : `${ASSETS_BASE_URL}${user.photoUrl}`)
+    : null;
 
   return (
     <div className="container mt-4" style={{ maxWidth: 960 }}>
@@ -340,6 +342,70 @@ export default function PerfilUsuario() {
           )}
         </div>
       </div>
+
+      {photoSrc && (
+        <div className="mt-2 d-flex gap-2">
+          <label className="btn btn-sm btn-primary mb-0">
+            Reemplazar
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                  if (!file) return;
+                  const form = new FormData();
+                  // usar boleta preferentemente
+                  form.append('boletaOrEmail', user.boleta || user.email);
+                  form.append('photo', file);
+                  try {
+                    const { data } = await api.post('/admin/import/photos', form, {
+                      headers: { 'Content-Type': 'multipart/form-data' }
+                    });
+                    if (data.ok) {
+                      setUser(prev => ({ ...prev, photoUrl: data.photoUrl }));
+                      const stored = JSON.parse(localStorage.getItem('user') || 'null');
+                      if (stored) {
+                        stored.photoUrl = data.photoUrl;
+                        localStorage.setItem('user', JSON.stringify(stored));
+                      }
+                    } else {
+                      alert(data.error || 'Error subiendo foto');
+                    }
+                  } catch (err) {
+                    alert(err?.response?.data?.error || 'Error subiendo foto');
+                  } finally {
+                    e.target.value = '';
+                  }
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-danger"
+            onClick={async () => {
+              if (!confirm('¿Eliminar foto de perfil?')) return;
+              try {
+                const { data } = await api.delete(`/admin/import/photos/${user.boleta || user.email}`);
+                if (data.ok) {
+                  setUser(prev => ({ ...prev, photoUrl: null }));
+                  const stored = JSON.parse(localStorage.getItem('user') || 'null');
+                  if (stored) {
+                    stored.photoUrl = null;
+                    localStorage.setItem('user', JSON.stringify(stored));
+                  }
+                } else {
+                  alert(data.error || 'Error eliminando foto');
+                }
+              } catch (err) {
+                alert(err?.response?.data?.error || 'Error eliminando foto');
+              }
+            }}
+          >
+            Eliminar
+          </button>
+        </div>
+      )}
     </div>
   );
 }
