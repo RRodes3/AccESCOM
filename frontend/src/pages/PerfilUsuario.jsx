@@ -147,7 +147,7 @@ export default function PerfilUsuario() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              marginBottom: "1rem",
+              marginBottom: "0.75rem",
             }}
           >
             {photoSrc ? (
@@ -175,78 +175,9 @@ export default function PerfilUsuario() {
               </span>
             )}
           </div>
-
-          {/* Botones de gestión de foto */}
-          {photoSrc && (
-            <div className="mt-2 d-flex gap-2">
-              <label className="btn btn-sm btn-primary mb-0">
-                Reemplazar foto
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    
-                    if (!window.confirm('¿Reemplazar tu foto de perfil?')) {
-                      e.target.value = '';
-                      return;
-                    }
-                    
-                    const form = new FormData();
-                    form.append('photo', file);
-
-                    try {
-                      const { data } = await api.post('/profile/photo', form, {
-                        headers: { 'Content-Type': 'multipart/form-data' }
-                      });
-                      if (data.ok) {
-                        setUser(prev => ({ ...prev, photoUrl: data.photoUrl }));
-                        const stored = JSON.parse(localStorage.getItem('user') || 'null');
-                        if (stored) {
-                          stored.photoUrl = data.photoUrl;
-                          localStorage.setItem('user', JSON.stringify(stored));
-                        }
-                        alert('Foto actualizada correctamente');
-                      } else {
-                        alert(data.error || 'Error subiendo foto');
-                      }
-                    } catch (err) {
-                      alert(err?.response?.data?.error || 'Error subiendo foto');
-                    } finally {
-                      e.target.value = '';
-                    }
-                  }}
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-danger"
-                onClick={async () => {
-                  if (!window.confirm('¿Eliminar tu foto de perfil?')) return;
-                  try {
-                    const { data } = await api.delete('/profile/photo');
-                    if (data.ok) {
-                      setUser(prev => ({ ...prev, photoUrl: null }));
-                      const stored = JSON.parse(localStorage.getItem('user') || 'null');
-                      if (stored) {
-                        stored.photoUrl = null;
-                        localStorage.setItem('user', JSON.stringify(stored));
-                      }
-                      alert('Foto eliminada correctamente');
-                    } else {
-                      alert(data.error || 'Error eliminando foto');
-                    }
-                  } catch (err) {
-                    alert(err?.response?.data?.error || 'Error eliminando foto');
-                  }
-                }}
-              >
-                Eliminar foto
-              </button>
-            </div>
-          )}
+          <div className="text-muted small" style={{ textAlign: 'center' }}>
+            Foto no editable. Solicita cambios a soporte.
+          </div>
         </div>
 
         {/* Columna de datos del usuario */}
