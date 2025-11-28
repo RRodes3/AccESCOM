@@ -78,6 +78,14 @@ router.post('/register', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
 
+    if (!institutionalType) {
+      if (/@alumno\.ipn\.mx$/i.test(email)) {
+        institutionalType = 'STUDENT';
+      } else if (/@ipn\.mx$/i.test(email)) {
+        institutionalType = 'TEACHER';
+      }
+    }
+
     const created = await prisma.user.create({
       data: {
         boleta, firstName, lastNameP, lastNameM,

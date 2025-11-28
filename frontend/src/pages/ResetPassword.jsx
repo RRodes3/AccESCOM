@@ -14,6 +14,8 @@ export default function ResetPassword() {
   const [msg, setMsg] = useState('');
   const [ok, setOk] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [showPwd2, setShowPwd2] = useState(false);
 
   useEffect(() => {
     if (!token) setMsg('Enlace inválido.');
@@ -48,20 +50,40 @@ export default function ResetPassword() {
         <h5 className="text-center mb-3">Restablecer contraseña</h5>
         <form onSubmit={submit}>
           <label className="form-label">Nueva contraseña</label>
-          <input
-            type="password"
-            className="form-control mb-2"
-            value={pwd}
-            onChange={(e) => setPwd(e.target.value)}
-          />
+          <div className="input-group mb-2">
+            <input
+              type={showPwd ? "text" : "password"}
+              className="form-control"
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setShowPwd((v) => !v)}
+              tabIndex={-1}
+            >
+              {showPwd ? 'Ocultar' : 'Ver'}
+            </button>
+          </div>
 
           <label className="form-label">Confirmar contraseña</label>
-          <input
-            type="password"
-            className="form-control mb-2"
-            value={pwd2}
-            onChange={(e) => setPwd2(e.target.value)}
-          />
+          <div className="input-group mb-2">
+            <input
+              type={showPwd2 ? "text" : "password"}
+              className="form-control"
+              value={pwd2}
+              onChange={(e) => setPwd2(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => setShowPwd2((v) => !v)}
+              tabIndex={-1}
+            >
+              {showPwd2 ? 'Ocultar' : 'Ver'}
+            </button>
+          </div>
 
           {msg && (
             <div className={`alert mt-2 ${ok ? 'alert-success' : 'alert-danger'}`}>

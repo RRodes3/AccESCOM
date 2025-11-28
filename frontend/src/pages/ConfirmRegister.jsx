@@ -17,6 +17,7 @@ export default function ConfirmRegister() {
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState('');
   const [ok, setOk] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
 
   // Si no hay datos, renderiza un aviso simple (sin hooks adicionales)
   if (!form) {
@@ -72,7 +73,17 @@ export default function ConfirmRegister() {
         {form.contactEmail && (
           <div className="mb-2"><b>Correo de contacto:</b> {form.contactEmail}</div>
         )}
-        <div className="mb-2"><b>Contraseña:</b> ••••••••••</div>
+        <div className="mb-2 d-flex align-items-center">
+          <b className="me-2">Contraseña:</b>
+          <span>{showPwd ? form.password : '••••••••••'}</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-light ms-2"
+            onClick={() => setShowPwd((v) => !v)}
+          >
+            {showPwd ? 'Ocultar' : 'Ver'}
+          </button>
+        </div>
 
         {msg && <div className={`alert ${ok ? 'alert-success' : 'alert-danger'} mt-3`}>{msg}</div>}
 
