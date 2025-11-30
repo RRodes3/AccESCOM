@@ -1,0 +1,157 @@
+/* frontend/src/styles/darkMode.css */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --border-color: #dee2e6;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --navbar-bg: #ffffff;
+}
+
+.dark-mode {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #e9ecef;
+  --text-secondary: #adb5bd;
+  --border-color: #495057;
+  --card-bg: #2d2d2d;
+  --input-bg: #343a40;
+  --navbar-bg: #212529;
+}
+
+.dark-mode {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.dark-mode body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.dark-mode .card {
+  background-color: var(--card-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.dark-mode .form-control,
+.dark-mode .form-select {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.dark-mode .form-control:focus,
+.dark-mode .form-select:focus {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: #4c78f5;
+}
+
+.dark-mode .table {
+  color: var(--text-primary);
+  background-color: var(--card-bg);
+}
+
+.dark-mode .table-striped > tbody > tr:nth-of-type(odd) > * {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .bg-secondary {
+  background-color: var(--bg-secondary) !important;
+}
+
+.dark-mode .text-muted {
+  color: var(--text-secondary) !important;
+}
+
+.dark-mode .navbar {
+  background-color: var(--navbar-bg) !important;
+}
+
+.dark-mode .alert-warning {
+  background-color: #664d03;
+  border-color: #997404;
+  color: #ffecb5;
+}
+
+.dark-mode .alert-danger {
+  background-color: #842029;
+  border-color: #a52834;
+  color: #f8d7da;
+}
+
+.dark-mode .alert-success {
+  background-color: #0f5132;
+  border-color: #146c43;
+  color: #d1e7dd;
+}
+
+.dark-mode .alert-info {
+  background-color: #055160;
+  border-color: #087990;
+  color: #cff4fc;
+}
+
+/* Toggle Switch */
+.theme-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+.theme-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.theme-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.3s;
+  border-radius: 28px;
+}
+
+.theme-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.theme-toggle input:checked + .theme-toggle-slider {
+  background-color: #4c78f5;
+}
+
+.theme-toggle input:checked + .theme-toggle-slider:before {
+  transform: translateX(24px);
+}
+
+.theme-toggle-slider:after {
+  content: '☀️';
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 14px;
+  transition: 0.3s;
+}
+
+.theme-toggle input:checked + .theme-toggle-slider:after {
+  content: '🌙';
+  left: 28px;
+}

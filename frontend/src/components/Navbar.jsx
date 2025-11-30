@@ -2,6 +2,7 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../services/api';
 import { useMemo, useEffect, useState } from 'react';
+import ThemeToggle from './ThemeToggle';
 
 export default function Navbar() {
   const navigate = useNavigate();
@@ -151,7 +152,7 @@ export default function Navbar() {
   const toggleNav = () => setIsNavOpen((prev) => !prev);
 
   // --- JSX ---
-  const isOnProfilePage = location.pathname === '/mi-perfil';
+  const isOnProfilePage = location.pathname === '/mi-perfil' || location.pathname === '/perfil-guardia';
 
   return (
     <nav className="navbar navbar-expand-lg navbar-dark" style={{ backgroundColor: navbarColor }}>
@@ -247,6 +248,10 @@ export default function Navbar() {
                         Importar BD
                       </Link>
                     </li>
+                    {/* Toggle de modo oscuro para Admin */}
+                    <li className="nav-item">
+                      <ThemeToggle label={false} className="ms-2" />
+                    </li>
                   </>
                 )}
 
@@ -264,6 +269,18 @@ export default function Navbar() {
                         </Link>
                       </li>
                     ))}
+                    {/* Mi perfil para GUARD */}
+                    {!isOnProfilePage && (
+                      <li className="nav-item">
+                        <Link
+                          className="nav-link btn btn-sm btn-outline-light"
+                          to="/perfil-guardia"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          Mi perfil
+                        </Link>
+                      </li>
+                    )}
                   </>
                 )}
 

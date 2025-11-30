@@ -2,6 +2,7 @@
 import React from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 
+import { ThemeProvider } from './context/ThemeContext.jsx';
 import Navbar from './components/Navbar.jsx';
 import SessionIdleWatcher from './components/SessionIdleWatcher.jsx';
 import Landing from './pages/Landing.jsx';
@@ -26,6 +27,7 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import ChangePassword from './pages/ChangePassword';
 import LastAccesses from './pages/LastAccesses.jsx';
 import PerfilUsuario from './pages/PerfilUsuario';
+import PerfilGuardia from './pages/PerfilGuardia.jsx';
 
 
 function AppLayout() {
@@ -66,6 +68,15 @@ function AppLayout() {
             element={
               <ProtectedRoute>
                 <PerfilUsuario />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/perfil-guardia"
+            element={
+              <ProtectedRoute roles={['GUARD']}>
+                <PerfilGuardia />
               </ProtectedRoute>
             }
           />
@@ -139,5 +150,9 @@ function AppLayout() {
 }
 
 export default function App() {
-  return <AppLayout />;
+  return (
+    <ThemeProvider>
+      <AppLayout />
+    </ThemeProvider>
+  );
 }

@@ -1,6 +1,7 @@
 // src/pages/PerfilUsuario.jsx
 import { useEffect, useState } from "react";
 import { api, getMyAccessLogs, updateContactEmail } from "../services/api";
+import ThemeToggle from '../components/ThemeToggle';
 
 const API_BASE_URL = api.defaults.baseURL || "/api";
 const ASSETS_BASE_URL =
@@ -253,6 +254,14 @@ export default function PerfilUsuario() {
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Modo oscuro - Agregar después del card de datos del usuario */}
+      <div className="card mb-4">
+        <div className="card-body">
+          <h5 className="card-title mb-3">Preferencias</h5>
+          <ThemeToggle />
         </div>
       </div>
 
