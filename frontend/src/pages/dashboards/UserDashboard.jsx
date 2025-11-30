@@ -5,6 +5,15 @@ import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import '../../components/Common.css';
 
+function formatExpiry(expiresAt) {
+  if (!expiresAt) return null;
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  if (diffMs <= 0) return 'Ya expiró';
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return 'Caduca hoy (se regenerará automáticamente)';
+  const whole = Math.ceil(diffDays); // usa ceil para “faltan 2 días” si queda 1.2
+  return `Expira en ${whole} día${whole !== 1 ? 's' : ''}`;
+}
 
 function QrPanel({ kind, onClose }) {
   const nav = useNavigate();
@@ -57,9 +66,7 @@ function QrPanel({ kind, onClose }) {
   }
   if (!pass) return <div className="mt-3">Cargando…</div>;
 
-  const leftSec = pass.expiresAt
-    ? Math.max(0, Math.floor((new Date(pass.expiresAt).getTime() - Date.now()) / 1000))
-    : null;
+  const expiryMsg = formatExpiry(pass.expiresAt);
 
   return (
     <div className="text-center mt-3">
@@ -67,7 +74,11 @@ function QrPanel({ kind, onClose }) {
       <div className="d-inline-block p-3 bg-white rounded">
         <QRCode value={pass.code} size={220} />
       </div>
-      {leftSec !== null && <div className="mt-2 text-muted">Expira en {leftSec}s</div>}
+      {expiryMsg && (
+        <div className="mt-2 text-muted" style={{ fontSize: '.9rem' }}>
+          {expiryMsg}
+        </div>
+      )}
       <div className="mt-3 d-flex gap-2 justify-content-center">
         <button className="btn btn-outline-secondary" onClick={onClose}>Cerrar</button>
       </div>
@@ -80,19 +91,13 @@ export default function UserDashboard() {
   const [showKind, setShowKind] = useState(null);
 
   useEffect(() => {
-    // Escuchar cambios en localStorage (cuando vuelves de otra página)
     const handleStorageChange = () => {
       const updated = JSON.parse(localStorage.getItem('user') || 'null');
       setUser(updated);
     };
-    
-    // Llamar inmediatamente por si hubo cambios
     handleStorageChange();
-    
     window.addEventListener('storage', handleStorageChange);
-    // También escuchar evento personalizado para cambios en la misma pestaña
     window.addEventListener('userUpdated', handleStorageChange);
-    
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('userUpdated', handleStorageChange);
@@ -106,7 +111,6 @@ export default function UserDashboard() {
 
   return (
     <div className="container mt-3" style={{ maxWidth: 480 }}>
-
       {!showKind ? (
         <>
           <div className="bg-secondary bg-opacity-75 text-white rounded-3 p-3 mt-3 text-center">
@@ -121,7 +125,6 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          {/* Mensaje de soporte */}
           <div className="soporte-box">
             <p className="soporte-texto">
               ¿Tienes alguna duda o comentario?{" "}

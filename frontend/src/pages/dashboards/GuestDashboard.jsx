@@ -3,6 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import QRCode from 'react-qr-code';
 
+function formatExpiry(expiresAt) {
+  if (!expiresAt) return null;
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  if (diffMs <= 0) return 'Ya expiró';
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return 'Caduca hoy (se regenerará automáticamente)';
+  const whole = Math.ceil(diffDays);
+  return `Expira en ${whole} día${whole !== 1 ? 's' : ''}`;
+}
+
 function QrPanel({ visitId, kind, onClose }) {
   const [pass, setPass] = useState(null);
   const [error, setError] = useState('');
@@ -21,11 +31,7 @@ function QrPanel({ visitId, kind, onClose }) {
     }
   };
 
-  useEffect(() => { load(); /* carga al abrir */ }, [visitId, kind]);
-
-  const leftSec = pass?.expiresAt
-    ? Math.max(0, Math.floor((new Date(pass.expiresAt).getTime() - Date.now()) / 1000))
-    : null;
+  useEffect(() => { load(); }, [visitId, kind]);
 
   if (error) return (
     <div className="text-center mt-3">
@@ -35,13 +41,22 @@ function QrPanel({ visitId, kind, onClose }) {
   );
   if (!pass) return <div className="mt-3 text-center">Cargando…</div>;
 
+  const expiryMsg = formatExpiry(pass.expiresAt);
+
   return (
     <div className="text-center mt-3">
       <div className="mb-2"><b>QR de {kind === 'ENTRY' ? 'entrada' : 'salida'}</b></div>
       <div className="d-inline-block p-3 bg-white rounded">
         <QRCode value={pass.code} size={220} />
       </div>
-      {leftSec !== null && <div className="mt-2 text-muted">Expira en {leftSec}s</div>}
+      {expiryMsg && (
+        <div className="mt-2 text-muted" style={{ fontSize: '.9rem' }}>
+          {expiryMsg}
+        </div>
+      )}
+      <div className="mt-2 text-warning" style={{ fontSize: '.85rem' }}>
+        Código de único uso — si desea volver a ingresar, debe llenar un nuevo formulario.
+      </div>
       <div className="mt-3">
         <button className="btn btn-outline-secondary" onClick={onClose}>Cerrar</button>
       </div>
@@ -52,21 +67,18 @@ function QrPanel({ visitId, kind, onClose }) {
 export default function GuestDashboard() {
   const nav = useNavigate();
 
-  // tomamos lo guardado en sessionStorage por ConfirmGuest (o por GuestRegister si reusaste)
   const visit = useMemo(() => {
     try { return JSON.parse(sessionStorage.getItem('guestVisit') || 'null'); }
     catch { return null; }
   }, []);
 
-  // id de visita para pedir los QR
   const visitId = visit?.visitor?.id || visit?.id || null;
 
-  const [showKind, setShowKind] = useState(null); // 'ENTRY' | 'EXIT' | null
+  const [showKind, setShowKind] = useState(null);
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
     if (!visitId) {
-      // sin visita en sesión → manda a registrar invitado
       nav('/guest/register', { replace: true });
     }
   }, [visitId, nav]);
