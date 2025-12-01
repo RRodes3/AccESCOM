@@ -123,8 +123,9 @@ router.post(
 
         const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: 'accescom/users',
-          public_id: `user_${user.id}_${Date.now()}`,
+          public_id: `user_${user.id}`, // ✅ Sin timestamp
           overwrite: true,
+          invalidate: true, // ✅ AGREGAR
           resource_type: 'image',
           transformation: [
             { width: 400, height: 400, crop: 'fill', gravity: 'face' }
@@ -269,8 +270,9 @@ router.post(
 
       const uploadResult = await cloudinary.uploader.upload(file.path, {
         folder: 'accescom/users',
-        public_id: `user_${user.id}_${Date.now()}`,
+        public_id: `user_${user.id}`, // ✅ Sin timestamp
         overwrite: true,
+        invalidate: true, // ✅ AGREGAR
         resource_type: 'image',
         transformation: [
           { width: 400, height: 400, crop: 'fill', gravity: 'face' }

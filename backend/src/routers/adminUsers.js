@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
 const PDFDocument = require('pdfkit');
+const cloudinary = require('../utils/cloudinary');
 
 const prisma = new PrismaClient();
 
@@ -398,6 +399,16 @@ router.delete('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
     }
 
     if (mode === 'hard') {
+      // ✅ NUEVO: Limpiar Cloudinary antes de hard delete
+      if (target.photoPublicId) {
+        try {
+          await cloudinary.uploader.destroy(target.photoPublicId);
+          console.log(`🗑️ Foto eliminada de Cloudinary: ${target.photoPublicId}`);
+        } catch (e) {
+          console.warn('⚠️ Error eliminando foto de Cloudinary:', e?.message || e);
+        }
+      }
+      
       await prisma.user.delete({ where: { id: idNum } });
       return res.json({
         message: 'Usuario eliminado (hard delete). Logs quedan con userId NULL.',

@@ -69,8 +69,9 @@ router.post('/photo', auth, upload.single('photo'), async (req, res) => {
     // Subir nueva foto a Cloudinary
     const uploadResult = await cloudinary.uploader.upload(file.path, {
       folder: 'accescom/users',
-      public_id: `user_${user.id}_${Date.now()}`,
+      public_id: `user_${user.id}`, // ✅ SIN timestamp - siempre el mismo
       overwrite: true,
+      invalidate: true, // ✅ Limpia caché de CDN
       resource_type: 'image',
       transformation: [
         { width: 400, height: 400, crop: 'fill', gravity: 'face' }
