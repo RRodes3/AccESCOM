@@ -135,8 +135,9 @@ async function uploadUserPhotoFromZip({ photosFolder, boleta, userId }) {
     console.log(`📤 Subiendo foto a Cloudinary: ${path.basename(localPath)}`);
     const result = await cloudinary.uploader.upload(localPath, {
       folder: 'accescom/users',
-      public_id: `user_${userId || boleta}_${Date.now()}`,
+      public_id: `user_${userId || boleta}`, // ✅ SIN timestamp
       overwrite: true,
+      invalidate: true, // ✅ Limpia caché de CDN
       resource_type: 'image',
       transformation: [
         { width: 400, height: 400, crop: 'fill', gravity: 'face' },
@@ -397,8 +398,9 @@ async function importUsersWithPhotosReal(zipPath, { conflictAction = 'exclude' }
           try {
             const result = await cloudinary.uploader.upload(source, {
               folder: 'accescom/users',
-              public_id: `user_${upsertedUser.id}_${Date.now()}`,
+              public_id: `user_${upsertedUser.id}`, // ✅ SIN timestamp
               overwrite: true,
+              invalidate: true, // ✅ Limpia caché de CDN
               resource_type: 'image',
               transformation: [
                 { width: 400, height: 400, crop: 'fill', gravity: 'face' },
