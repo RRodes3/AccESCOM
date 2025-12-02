@@ -410,7 +410,7 @@ router.post(
   }
 );
 
-// ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import/zip ────────
+// ───── IMPORTAR CON FOTOS (ZIP o CSV en disco): POST /api/admin/import/:type ────────
 router.post(
   '/:type',  // ← CAMBIO: antes era '/import/:type'
   auth,
@@ -421,6 +421,7 @@ router.post(
     const { file } = req;
     const dryRun = String(req.query.dryRun || '').toLowerCase() === 'true';
     const conflictAction = String(req.query.conflictAction || 'exclude').toLowerCase(); // exclude|overwrite|delete
+    const ignoreInvalid = String(req.query.ignoreInvalid || '').toLowerCase() === 'true'; // ✅ NUEVO
 
     if (!file) {
       return res.status(400).json({ error: 'No se ha enviado ningún archivo.' });
@@ -435,16 +436,19 @@ router.post(
       let response;
 
       if (type === 'zip') {
-        // NUEVO: importación con soporte dryRun y acciones de conflicto
+        // NUEVO: importación con soporte dryRun, conflictos e ignoreInvalid
         const { importUsersWithPhotosDryRun, importUsersWithPhotosReal } = require('../../scripts/importWithPhotosActions');
 
         if (dryRun) {
           response = await importUsersWithPhotosDryRun(file.path);
         } else {
-            response = await importUsersWithPhotosReal(file.path, { conflictAction });
+          response = await importUsersWithPhotosReal(file.path, {
+            conflictAction,
+            ignoreInvalid, // ✅ SE PASA AL SCRIPT
+          });
         }
       } else {
-        // CSV "suave" existente (sin fotos) — opcional: podrías también extender a dryRun si no lo tienes.
+        // CSV "suave" existente (sin fotos)
         const { importCSV } = require('../../scripts/importCSV');
         response = await importCSV(file.path);
       }

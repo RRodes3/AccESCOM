@@ -17,6 +17,10 @@ export default function ImportDB() {
   const [err, setErr] = useState("");
   const [status, setStatus] = useState(""); // mensaje rápido al importar directo
 
+  // NUEVO: estados para flujo "subir solo fotos válidas"
+  const [hasInvalidPhotos, setHasInvalidPhotos] = useState(false);
+  const [forcingValidPhotos, setForcingValidPhotos] = useState(false);
+
   // Determinar endpoint
   function getEndpoint() {
     if (mode === "photos") return "/admin/import-photos";
@@ -67,6 +71,7 @@ export default function ImportDB() {
     setShowConflictOptions(false);
     setImportResult(null);
     setPhotosResult(null);
+    setHasInvalidPhotos(false);
     setLoading(true);
 
     try {
@@ -101,7 +106,8 @@ export default function ImportDB() {
     e.preventDefault();
     setStatus("");
     setErr(""); // ✅ Limpiar error anterior
-    
+    setHasInvalidPhotos(false);
+
     if (!file) {
       setStatus("Selecciona un archivo primero");
       return;
@@ -114,39 +120,43 @@ export default function ImportDB() {
       if (mode === "photos") {
         const formData = new FormData();
         formData.append("file", file);
-        
+
         const { data } = await api.post("/admin/import-photos", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
-        console.log('📥 Respuesta del backend:', data); // ✅ LOG DE DEPURACIÓN
+        console.log("📥 Respuesta del backend:", data); // ✅ LOG DE DEPURACIÓN
 
         if (data.ok) {
           // Para ZIP (respuesta con stats)
           if (data.stats) {
-            const { processed, updated, skippedNoUser, errors, photoErrors } = data.stats;
-            
+            const { processed, updated, skippedNoUser, errors, photoErrors } =
+              data.stats;
+
             let statusMsg = `✅ ${updated || 0} fotos asociadas exitosamente.`;
-            
+
             if (skippedNoUser > 0) {
               statusMsg += ` ⚠️ ${skippedNoUser} sin usuario coincidente.`;
             }
-            
+
             if (errors > 0) {
               statusMsg += ` ❌ ${errors} errores.`;
             }
-            
+
             setStatus(statusMsg);
             setPhotosResult({
               ok: true,
               processed: processed || 0,
               updated: updated || 0,
-              notMatched: [], 
+              notMatched: [],
               skipped: [],
               errors: errors || 0,
               photoErrors: photoErrors || [],
               stats: data.stats,
             });
+            setHasInvalidPhotos(
+              Array.isArray(photoErrors) && photoErrors.length > 0
+            );
           }
           // Para imagen individual
           else {
@@ -157,6 +167,7 @@ export default function ImportDB() {
               message: data.message,
               photoUrl: data.photoUrl,
             });
+            setHasInvalidPhotos(false);
           }
 
           setImportResult(null);
@@ -164,11 +175,15 @@ export default function ImportDB() {
         } else {
           // Backend devolvió ok: false
           setErr(data.error || "Error al importar fotos");
-          setPhotosResult({ 
-            ok: false, 
+          const photoErrors = data.photoErrors || [];
+          setPhotosResult({
+            ok: false,
             error: data.error,
-            photoErrors: data.photoErrors || []
+            photoErrors,
           });
+          if (photoErrors.length > 0) {
+            setHasInvalidPhotos(true);
+          }
         }
         return;
       }
@@ -186,10 +201,13 @@ export default function ImportDB() {
       setImportResult(data);
       setValidationResult(null);
       setPhotosResult(null);
+      setHasInvalidPhotos(false);
 
       if (mode === "zip" && data?.photosProcessed !== undefined) {
         setStatus(
-          `Usuarios importados: ${data.upserted || data.data?.created || 0}. Fotos procesadas: ${data.photosProcessed}.`
+          `Usuarios importados: ${
+            data.upserted || data.data?.created || 0
+          }. Fotos procesadas: ${data.photosProcessed}.`
         );
       } else {
         setStatus(
@@ -210,26 +228,129 @@ export default function ImportDB() {
         if (fi) fi.value = "";
       }, 150);
     } catch (err) {
-      console.error('Error completo:', err);
-      console.error('Error response:', err?.response?.data);
-      
-      const errorMsg = err?.response?.data?.error || 
-                       err?.response?.data?.message || 
-                       err?.message ||
-                       "Error desconocido en la importación";
-      
+      console.error("Error completo:", err);
+      console.error("Error response:", err?.response?.data);
+
+      const errorMsg =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Error desconocido en la importación";
+
       setErr(errorMsg); // ✅ Usar setErr en lugar de setStatus
-      
+
       // Si hay errores de fotos, mostrarlos
       if (err?.response?.data?.photoErrors) {
+        const photoErrors = err.response.data.photoErrors;
         setPhotosResult({
           ok: false,
           error: errorMsg,
-          photoErrors: err.response.data.photoErrors
+          photoErrors,
         });
+        if (photoErrors.length > 0) {
+          setHasInvalidPhotos(true);
+        }
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  // 🔁 NUEVO: Importar solo fotos válidas (ignorando las inválidas)
+  async function handleForcePhotosValid() {
+    if (!file) return;
+
+    setForcingValidPhotos(true);
+    setErr("");
+    setStatus("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const { data } = await api.post(
+        "/admin/import-photos?ignoreInvalid=true",
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        }
+      );
+
+      console.log("📥 Respuesta FORZADA (solo válidas):", data);
+
+      if (data.ok) {
+        if (data.stats) {
+          const { processed, updated, skippedNoUser, errors, photoErrors } =
+            data.stats;
+
+          let statusMsg = `✅ ${updated || 0} fotos asociadas exitosamente (solo válidas).`;
+
+          if (skippedNoUser > 0) {
+            statusMsg += ` ⚠️ ${skippedNoUser} sin usuario coincidente.`;
+          }
+          if (errors > 0) {
+            statusMsg += ` ❌ ${errors} errores.`;
+          }
+
+          setStatus(statusMsg);
+          setPhotosResult({
+            ok: true,
+            processed: processed || 0,
+            updated: updated || 0,
+            notMatched: [],
+            skipped: [],
+            errors: errors || 0,
+            photoErrors: photoErrors || [],
+            stats: data.stats,
+          });
+          setHasInvalidPhotos(
+            Array.isArray(photoErrors) && photoErrors.length > 0
+          );
+        } else {
+          setStatus(
+            `✅ ${data.message || "Fotos válidas importadas correctamente"}`
+          );
+          setPhotosResult({
+            ok: true,
+            processed: data.processed || 1,
+            message: data.message,
+          });
+          setHasInvalidPhotos(false);
+        }
+      } else {
+        const photoErrors = data.photoErrors || [];
+        setErr(data.error || "Error al importar solo fotos válidas");
+        setPhotosResult({
+          ok: false,
+          error: data.error,
+          photoErrors,
+        });
+        if (photoErrors.length > 0) {
+          setHasInvalidPhotos(true);
+        }
+      }
+    } catch (err) {
+      console.error("Error FORZANDO válidas:", err);
+      const errorMsg =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Error al importar solo fotos válidas";
+      setErr(errorMsg);
+
+      if (err?.response?.data?.photoErrors) {
+        const photoErrors = err.response.data.photoErrors;
+        setPhotosResult({
+          ok: false,
+          error: errorMsg,
+          photoErrors,
+        });
+        if (photoErrors.length > 0) {
+          setHasInvalidPhotos(true);
+        }
+      }
+    } finally {
+      setForcingValidPhotos(false);
     }
   }
 
@@ -255,6 +376,7 @@ export default function ImportDB() {
       setImportResult(data);
       setValidationResult(null);
       setPhotosResult(null);
+      setHasInvalidPhotos(false);
 
       setTimeout(() => {
         setFile(null);
@@ -280,6 +402,8 @@ export default function ImportDB() {
     setErr("");
     setStatus("");
     setConflictAction("exclude");
+    setHasInvalidPhotos(false);
+    setForcingValidPhotos(false);
     const fileInput = document.getElementById("fileInput");
     if (fileInput) fileInput.value = "";
   }
@@ -294,6 +418,8 @@ export default function ImportDB() {
     setShowConflictOptions(false);
     setErr("");
     setStatus("");
+    setHasInvalidPhotos(false);
+    setForcingValidPhotos(false);
     const fileInput = document.getElementById("fileInput");
     if (fileInput) fileInput.value = "";
   }
@@ -380,6 +506,8 @@ export default function ImportDB() {
                         return;
                       }
                       setFile(f || null);
+                      setPhotosResult(null);
+                      setHasInvalidPhotos(false);
                     }}
                   />
                 </div>
@@ -848,13 +976,17 @@ export default function ImportDB() {
               </div>
             )}
 
-            {/* ✅ NUEVO: Mostrar errores detallados */}
+            {/* Mostrar errores detallados */}
             {photosResult.photoErrors && photosResult.photoErrors.length > 0 && (
               <div className="mt-4">
                 <h6 className="text-danger">⚠️ Fotos con problemas:</h6>
                 <div className="alert alert-warning">
                   <p className="mb-0">
-                    {photosResult.photoErrors.length} {photosResult.photoErrors.length === 1 ? 'foto no pudo' : 'fotos no pudieron'} ser procesadas. Ver detalles abajo.
+                    {photosResult.photoErrors.length}{" "}
+                    {photosResult.photoErrors.length === 1
+                      ? "foto no pudo"
+                      : "fotos no pudieron"}{" "}
+                    ser procesadas. Ver detalles abajo.
                   </p>
                 </div>
                 
@@ -875,7 +1007,7 @@ export default function ImportDB() {
                         {photosResult.photoErrors.map((err, idx) => (
                           <tr key={idx}>
                             <td><code>{err.fileName}</code></td>
-                            <td>{err.boleta || '—'}</td>
+                            <td>{err.boleta || "—"}</td>
                             <td className="text-danger">{err.reason}</td>
                           </tr>
                         ))}
@@ -885,18 +1017,44 @@ export default function ImportDB() {
                 </details>
               </div>
             )}
+
+            {/* Botones para solo válidas cuando hay inválidas */}
+            {hasInvalidPhotos && (
+              <div className="mt-3 d-flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleForcePhotosValid}
+                  disabled={forcingValidPhotos || !file}
+                >
+                  {forcingValidPhotos
+                    ? "Subiendo solo fotos válidas..."
+                    : "Subir solo fotos válidas"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  onClick={handleReset}
+                  disabled={forcingValidPhotos}
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
           </div>
 
-          <button
-            className="btn btn-primary mt-3"
-            onClick={() => {
-              setPhotosResult(null);
-              setFile(null);
-              setStatus("");
-            }}
-          >
-            Nueva importación de fotos
-          </button>
+          {!hasInvalidPhotos && (
+            <button
+              className="btn btn-primary mt-3"
+              onClick={() => {
+                setPhotosResult(null);
+                setFile(null);
+                setStatus("");
+              }}
+            >
+              Nueva importación de fotos
+            </button>
+          )}
         </div>
       )}
     </div>
