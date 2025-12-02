@@ -123,7 +123,9 @@ export default function ImportDB() {
 
         const { data } = await api.post("/admin/import-photos", formData, {
           headers: { "Content-Type": "multipart/form-data" },
+          timeout: 120000, // 120s solo para esta petición
         });
+
 
         console.log("📥 Respuesta del backend:", data); // ✅ LOG DE DEPURACIÓN
 
@@ -273,6 +275,7 @@ export default function ImportDB() {
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
+          timeout: 120000,
         }
       );
 

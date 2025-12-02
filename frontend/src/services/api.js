@@ -10,7 +10,7 @@ const baseURL = '/api';
 export const api = axios.create({
   baseURL,
   withCredentials: true,      // ← Necesario para enviar/recibir cookies
-  timeout: 15000,             // 15s
+  timeout: 60000,             // 15s
 });
 
 // ------------------
