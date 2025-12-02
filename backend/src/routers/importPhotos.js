@@ -164,26 +164,49 @@ router.post(
       let updated = 0;
       let skippedNoUser = 0;
       let errors = 0;
+      const photoErrors = []; // Array de errores detallados
 
       try {
         for (const entry of entries) {
           if (entry.isDirectory) continue;
 
           const entryExt = path.extname(entry.entryName).toLowerCase();
-          if (!['.jpg', '.jpeg', '.png'].includes(entryExt)) continue;
+          const fileName = entry.entryName;
+          
+          // ✅ NUEVO: Validar formato ANTES de continuar
+          if (!['.jpg', '.jpeg', '.png'].includes(entryExt)) {
+            photoErrors.push({
+              fileName,
+              reason: `Formato no soportado (${entryExt}). Solo se aceptan .jpg, .jpeg, .png`
+            });
+            errors++;
+            continue;
+          }
 
           const boleta = path.basename(entry.entryName, entryExt).trim();
-          if (!boleta) continue;
+          if (!boleta) {
+            photoErrors.push({
+              fileName,
+              reason: 'Nombre de archivo inválido (no se pudo extraer boleta)'
+            });
+            errors++;
+            continue;
+          }
 
           processed++;
 
           try {
             const user = await prisma.user.findFirst({
               where: { boleta },
-              select: { id: true, photoPublicId: true }
+              select: { id: true, photoPublicId: true, boleta: true }
             });
 
             if (!user) {
+              photoErrors.push({
+                fileName,
+                boleta,
+                reason: 'Boleta no existe en la base de datos'
+              });
               skippedNoUser++;
               continue;
             }
@@ -197,7 +220,7 @@ router.post(
             }
 
             const buffer = entry.getData();
-            const publicId = `user_${user.id}_${Date.now()}`;
+            const publicId = `user_${user.id}`; // ✅ Sin timestamp para evitar duplicados
 
             const uploadResult = await uploadBufferToCloudinary(buffer, publicId);
 
@@ -210,8 +233,14 @@ router.post(
             });
 
             updated++;
+            console.log(`✅ Foto asociada: ${boleta} → ${uploadResult.public_id}`);
           } catch (e) {
             console.error('Error procesando foto de', boleta, e);
+            photoErrors.push({
+              fileName,
+              boleta,
+              reason: `Error al subir a Cloudinary: ${e.message}`
+            });
             errors++;
           }
         }
@@ -221,7 +250,13 @@ router.post(
         return res.json({
           ok: true,
           message: 'Importación de fotos completada',
-          stats: { processed, updated, skippedNoUser, errors }
+          stats: { 
+            processed, 
+            updated, 
+            skippedNoUser, 
+            errors,
+            photoErrors: photoErrors.length > 0 ? photoErrors : undefined // ✅ NUEVO
+          }
         });
       } catch (err) {
         console.error('Error general leyendo ZIP:', err);

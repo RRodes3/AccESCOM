@@ -119,19 +119,27 @@ export default function ImportDB() {
         if (data.ok) {
           // Para ZIP (respuesta con stats)
           if (data.stats) {
-            const { processed, updated, skippedNoUser, errors } = data.stats;
-            setStatus(
-              `✅ Fotos procesadas: ${processed || 0} asociadas exitosamente. ` +
-                (skippedNoUser > 0
-                  ? `⚠️ ${skippedNoUser} sin usuario coincidente. `
-                  : "") +
-                (errors > 0 ? `❌ ${errors} errores al procesar.` : "")
-            );
+            const { processed, updated, skippedNoUser, errors, photoErrors } = data.stats;
+            
+            let statusMsg = `✅ ${updated || 0} fotos asociadas exitosamente.`;
+            
+            if (skippedNoUser > 0) {
+              statusMsg += ` ⚠️ ${skippedNoUser} sin usuario coincidente.`;
+            }
+            
+            if (errors > 0) {
+              statusMsg += ` ❌ ${errors} errores.`;
+            }
+            
+            setStatus(statusMsg);
             setPhotosResult({
               ok: true,
               processed: processed || 0,
-              notMatched: [], // Backend no devuelve lista detallada, solo contador
+              updated: updated || 0,
+              notMatched: [], 
               skipped: [],
+              errors: errors || 0,
+              photoErrors: photoErrors || [], // ✅ NUEVO
               stats: data.stats,
             });
           }
@@ -776,75 +784,93 @@ export default function ImportDB() {
       )}
 
       {/* Resultado importación fotos */}
-      {photosResult && mode === "photos" && (
-        <div className="card shadow-sm border-info">
-          <div className="card-body">
-            <h5 className="card-title text-info">
-              🖼️ Importación de fotos completada
-            </h5>
-            <div className="row g-3 mb-3">
-              <div className="col-md-4">
-                <div className="p-3 bg-info bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-info">
-                    {photosResult.processed || photosResult.stats?.processed || 0}
-                  </h3>
-                  <small className="text-muted">Fotos asociadas</small>
+      {photosResult && (
+        <div className="mt-4">
+          <div
+            className={`alert ${
+              photosResult.ok ? "alert-success" : "alert-danger"
+            }`}
+          >
+            <h5>🖼️ Importación de fotos completada</h5>
+            
+            {photosResult.stats && (
+              <div className="row mt-3">
+                <div className="col-md-4">
+                  <div className="card bg-light">
+                    <div className="card-body text-center">
+                      <h3 className="text-success">{photosResult.stats.updated || 0}</h3>
+                      <small>Fotos asociadas</small>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="col-md-4">
-                <div className="p-3 bg-warning bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-warning">
-                    {photosResult.stats?.skippedNoUser || 0}
-                  </h3>
-                  <small className="text-muted">Sin usuario</small>
+                <div className="col-md-4">
+                  <div className="card bg-light">
+                    <div className="card-body text-center">
+                      <h3 className="text-warning">{photosResult.stats.skippedNoUser || 0}</h3>
+                      <small>Sin usuario</small>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="col-md-4">
-                <div className="p-3 bg-danger bg-opacity-10 rounded text-center">
-                  <h3 className="mb-0 text-danger">
-                    {photosResult.stats?.errors || 0}
-                  </h3>
-                  <small className="text-muted">Errores</small>
+                <div className="col-md-4">
+                  <div className="card bg-light">
+                    <div className="card-body text-center">
+                      <h3 className="text-danger">{photosResult.stats.errors || 0}</h3>
+                      <small>Errores</small>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Advertencia si hay fotos sin usuario */}
-            {photosResult.stats?.skippedNoUser > 0 && (
-              <div className="alert alert-warning">
-                <h6 className="alert-heading">⚠️ Fotos sin coincidencia:</h6>
-                <p className="mb-0">
-                  {photosResult.stats.skippedNoUser} fotos no pudieron asociarse porque
-                  la boleta no existe en la base de datos.
-                </p>
               </div>
             )}
 
-            {/* Errores al procesar */}
-            {photosResult.stats?.errors > 0 && (
-              <div className="alert alert-danger">
-                <h6 className="alert-heading">❌ Errores:</h6>
-                <p className="mb-0">
-                  {photosResult.stats.errors} fotos fallaron al procesar.
-                  Revisa los logs del servidor para más detalles.
-                </p>
+            {/* ✅ NUEVO: Mostrar errores detallados */}
+            {photosResult.photoErrors && photosResult.photoErrors.length > 0 && (
+              <div className="mt-4">
+                <h6 className="text-danger">⚠️ Fotos con problemas:</h6>
+                <div className="alert alert-warning">
+                  <p className="mb-0">
+                    {photosResult.photoErrors.length} {photosResult.photoErrors.length === 1 ? 'foto no pudo' : 'fotos no pudieron'} ser procesadas. Ver detalles abajo.
+                  </p>
+                </div>
+                
+                <details className="mt-2">
+                  <summary className="btn btn-sm btn-outline-secondary">
+                    Ver detalles de errores ({photosResult.photoErrors.length})
+                  </summary>
+                  <div className="table-responsive mt-2">
+                    <table className="table table-sm table-bordered">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Archivo</th>
+                          <th>Boleta</th>
+                          <th>Motivo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {photosResult.photoErrors.map((err, idx) => (
+                          <tr key={idx}>
+                            <td><code>{err.fileName}</code></td>
+                            <td>{err.boleta || '—'}</td>
+                            <td className="text-danger">{err.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
               </div>
             )}
-
-            {/* Éxito individual */}
-            {photosResult.photoUrl && (
-              <div className="alert alert-success">
-                <h6 className="alert-heading">✅ Foto subida exitosamente</h6>
-                <p className="mb-0">URL: <code className="small">{photosResult.photoUrl}</code></p>
-              </div>
-            )}
-
-            <div className="text-center mt-4">
-              <button onClick={handleReset} className="btn btn-info">
-                Nueva importación de fotos
-              </button>
-            </div>
           </div>
+
+          <button
+            className="btn btn-primary mt-3"
+            onClick={() => {
+              setPhotosResult(null);
+              setFile(null);
+              setStatus("");
+            }}
+          >
+            Nueva importación de fotos
+          </button>
         </div>
       )}
     </div>
