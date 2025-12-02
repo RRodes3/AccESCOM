@@ -100,6 +100,8 @@ export default function ImportDB() {
   async function handleSubmit(e) {
     e.preventDefault();
     setStatus("");
+    setErr(""); // ✅ Limpiar error anterior
+    
     if (!file) {
       setStatus("Selecciona un archivo primero");
       return;
@@ -108,13 +110,16 @@ export default function ImportDB() {
     try {
       setLoading(true);
 
-      // Importación directa para fotos (dentro de handleSubmit)
+      // Importación directa para fotos
       if (mode === "photos") {
         const formData = new FormData();
         formData.append("file", file);
+        
         const { data } = await api.post("/admin/import-photos", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
+
+        console.log('📥 Respuesta del backend:', data); // ✅ LOG DE DEPURACIÓN
 
         if (data.ok) {
           // Para ZIP (respuesta con stats)
@@ -139,7 +144,7 @@ export default function ImportDB() {
               notMatched: [], 
               skipped: [],
               errors: errors || 0,
-              photoErrors: photoErrors || [], // ✅ NUEVO
+              photoErrors: photoErrors || [],
               stats: data.stats,
             });
           }
@@ -157,8 +162,13 @@ export default function ImportDB() {
           setImportResult(null);
           setValidationResult(null);
         } else {
-          setStatus(data.error || "Error al importar fotos");
-          setPhotosResult({ ok: false, error: data.error });
+          // Backend devolvió ok: false
+          setErr(data.error || "Error al importar fotos");
+          setPhotosResult({ 
+            ok: false, 
+            error: data.error,
+            photoErrors: data.photoErrors || []
+          });
         }
         return;
       }
@@ -200,8 +210,24 @@ export default function ImportDB() {
         if (fi) fi.value = "";
       }, 150);
     } catch (err) {
-      console.error(err);
-      setStatus("Error en la importación");
+      console.error('Error completo:', err);
+      console.error('Error response:', err?.response?.data);
+      
+      const errorMsg = err?.response?.data?.error || 
+                       err?.response?.data?.message || 
+                       err?.message ||
+                       "Error desconocido en la importación";
+      
+      setErr(errorMsg); // ✅ Usar setErr en lugar de setStatus
+      
+      // Si hay errores de fotos, mostrarlos
+      if (err?.response?.data?.photoErrors) {
+        setPhotosResult({
+          ok: false,
+          error: errorMsg,
+          photoErrors: err.response.data.photoErrors
+        });
+      }
     } finally {
       setLoading(false);
     }
