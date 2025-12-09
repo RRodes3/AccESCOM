@@ -48,6 +48,7 @@ function QrPanel({ visitId, kind, onClose }) {
           className="btn btn-primary mt-2" 
           onClick={() => {
             sessionStorage.removeItem('guestVisit');
+            window.dispatchEvent(new Event('guestVisitUpdate')); // Notificar al navbar
             nav('/guest/register', { replace: true });
           }}
         >
