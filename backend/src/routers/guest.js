@@ -260,17 +260,31 @@ router.get('/my-active', async (req, res) => {
         passes: {
           where: {
             kind: kindRaw,
-            status: 'ACTIVE',
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
           },
           select: { id: true, code: true, kind: true, status: true, expiresAt: true },
           orderBy: { id: 'desc' },
-          take: 1,
         }
       }
     });
 
     if (!visit) return res.status(404).json({ error: 'Visita no encontrada' });
+
+    // Verificar si todos los QR (ENTRY y EXIT) ya fueron usados
+    const allPasses = await prisma.qRPass.findMany({
+      where: { guestId: visitId },
+      select: { kind: true, status: true }
+    });
+    
+    const entryPass = allPasses.find(p => p.kind === 'ENTRY');
+    const exitPass = allPasses.find(p => p.kind === 'EXIT');
+    const bothUsed = entryPass?.status === 'USED' && exitPass?.status === 'USED';
+
+    if (bothUsed) {
+      return res.status(400).json({ 
+        error: 'Tu QR está deshabilitado, vuelve a llenar el formulario de registro para volver a generar un nuevo QR.',
+        allUsed: true 
+      });
+    }
 
     // Gate por estado
     if (visit.state === 'OUTSIDE' && kindRaw === 'EXIT') {
@@ -283,7 +297,12 @@ router.get('/my-active', async (req, res) => {
       return res.status(400).json({ error: 'La visita ya fue concluida.' });
     }
 
-    const pass = visit.passes[0] || null;
+    // Buscar el QR activo solicitado
+    const pass = visit.passes.find(p => 
+      p.status === 'ACTIVE' && 
+      (p.expiresAt === null || new Date(p.expiresAt) > new Date())
+    ) || null;
+    
     if (!pass) {
       return res.status(404).json({ error: 'No hay QR vigente de ese tipo.' });
     }

@@ -14,12 +14,15 @@ function formatExpiry(expiresAt) {
 }
 
 function QrPanel({ visitId, kind, onClose }) {
+  const nav = useNavigate();
   const [pass, setPass] = useState(null);
   const [error, setError] = useState('');
+  const [allUsed, setAllUsed] = useState(false);
 
   const load = async () => {
     setError('');
     setPass(null);
+    setAllUsed(false);
     try {
       const { data } = await api.get('/guest/my-active', {
         params: { visitId, kind }
@@ -27,7 +30,11 @@ function QrPanel({ visitId, kind, onClose }) {
       setPass(data.pass || null);
       if (!data.pass) setError('No hay QR disponible.');
     } catch (e) {
-      setError(e?.response?.data?.error || 'No se pudo obtener el QR');
+      const errorData = e?.response?.data;
+      setError(errorData?.error || 'No se pudo obtener el QR');
+      if (errorData?.allUsed) {
+        setAllUsed(true);
+      }
     }
   };
 
@@ -35,8 +42,19 @@ function QrPanel({ visitId, kind, onClose }) {
 
   if (error) return (
     <div className="text-center mt-3">
-      <div className="alert alert-danger">{error}</div>
-      <button className="btn btn-outline-secondary mt-2" onClick={onClose}>Cerrar</button>
+      <div className="alert alert-warning">{error}</div>
+      {allUsed && (
+        <button 
+          className="btn btn-primary mt-2" 
+          onClick={() => {
+            sessionStorage.removeItem('guestVisit');
+            nav('/guest/register', { replace: true });
+          }}
+        >
+          Ir al formulario de registro
+        </button>
+      )}
+      <button className="btn btn-outline-secondary mt-2 ms-2" onClick={onClose}>Cerrar</button>
     </div>
   );
   if (!pass) return <div className="mt-3 text-center">Cargando…</div>;

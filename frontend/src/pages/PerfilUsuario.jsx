@@ -323,14 +323,20 @@ export default function PerfilUsuario() {
                       : "—";
 
                     // Resultado con colores
-                    const resultado = log.result || "—";
+                    let resultado = log.result || "—";
+                    // Traducir a español
+                    if (resultado === 'ALLOWED') resultado = 'Permitido';
+                    else if (resultado === 'DENIED') resultado = 'Denegado';
+                    else if (resultado === 'INVALID_QR') resultado = 'QR Inválido';
+                    else if (resultado === 'EXPIRED_QR') resultado = 'QR Expirado';
+                    
                     let colorClass = '';
                     let backgroundColor = '';
                     
-                    if (resultado === 'ALLOWED') {
+                    if (log.result === 'ALLOWED') {
                       colorClass = 'text-white';
                       backgroundColor = '#28a745'; // Verde
-                    } else if (resultado.includes('DENIED') || resultado.includes('INVALID') || resultado.includes('EXPIRED')) {
+                    } else if (log.result && (log.result.includes('DENIED') || log.result.includes('INVALID') || log.result.includes('EXPIRED'))) {
                       colorClass = 'text-white';
                       backgroundColor = '#dc3545'; // Rojo
                     } else {

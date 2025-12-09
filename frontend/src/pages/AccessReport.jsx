@@ -101,7 +101,8 @@ export default function AccessReport() {
           email: row.user?.email || '—',
           contactEmail: row.user?.contactEmail || '—',
           curp: row.guest?.curp || '—',
-          reason: row.reason || '—',
+          guestReason: row.guest?.reason || '—',  // Motivo original del invitado
+          details: row.reason || '—',  // Resultado de la acción (Salida permitida, QR expirado, etc.)
           guard: row.guard?.name || '—',
         };
       }),
@@ -125,7 +126,8 @@ export default function AccessReport() {
       'Email',
       'Correo contacto',
       'CURP',
-      'Motivo',
+      'Motivo Visita',
+      'Detalles',
       'Guardia',
     ];
 
@@ -143,7 +145,8 @@ export default function AccessReport() {
         r.email || '',
         r.contactEmail || '',
         r.curp || '',
-        r.reason || '',
+        r.guestReason || '',
+        r.details || '',
         r.guard || '',
       ];
 
@@ -347,6 +350,7 @@ export default function AccessReport() {
               <th>Correo contacto</th>
               <th>CURP</th>
               <th>Motivo Visita</th>
+              <th>Detalles</th>
             </tr>
           </thead>
           <tbody>
@@ -359,10 +363,10 @@ export default function AccessReport() {
                 <td>{r.rol}</td>
                 <td>{r.subRol}</td>
                 <td>
-                  {r.curp !== '—' && r.reason !== '—' ? (
+                  {r.curp !== '—' && r.guestReason !== '—' ? (
                     <>
                       <div><b>CURP:</b> {r.curp}</div>
-                      <div><b>Motivo:</b> {r.reason}</div>
+                      <div><b>Motivo:</b> {r.guestReason}</div>
                     </>
                   ) : (
                     <span className="text-muted">—</span>
@@ -373,12 +377,13 @@ export default function AccessReport() {
                 <td>{r.email}</td>
                 <td>{r.contactEmail}</td>
                 <td>{r.curp}</td>
-                <td>{r.reason}</td>
+                <td>{r.guestReason}</td>
+                <td>{r.details}</td>
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={13} className="text-center text-muted">
+                <td colSpan={14} className="text-center text-muted">
                   Sin registros
                 </td>
               </tr>

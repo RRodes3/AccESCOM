@@ -482,6 +482,8 @@ router.post(
           reason,
         });
 
+        console.log('QR Estado no activo - Enviando owner:', owner ? { kind: owner.kind, name: owner.name } : 'NULL');
+
         return res.status(400).json({
           ok: false,
           result,
@@ -528,6 +530,8 @@ router.post(
           result: 'EXPIRED_QR',
           reason,
         });
+
+        console.log('QR Expirado - Enviando owner:', owner ? { name: buildFullName(pass.user), boleta: pass.user?.boleta } : 'NULL');
 
         return res.status(400).json({
           ok: false,
