@@ -33,6 +33,7 @@ export default function LastAccessesTable() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchAccesses = async (take = 10, skip = 0) => {
     setLoading(true);
@@ -122,6 +123,24 @@ export default function LastAccessesTable() {
     fetchAccesses(newTake, 0);
   };
 
+  // Filtrar accesos según búsqueda
+  const filteredAccesses = accesses.filter((access) => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase();
+    const userName = (access.user?.name || '').toLowerCase();
+    const userBoleta = (access.user?.boleta || '').toLowerCase();
+    const guestName = (access.guest?.name || '').toLowerCase();
+    const guestCurp = (access.guest?.curp || '').toLowerCase();
+    
+    return (
+      userName.includes(query) ||
+      userBoleta.includes(query) ||
+      guestName.includes(query) ||
+      guestCurp.includes(query)
+    );
+  });
+
   if (loading && accesses.length === 0) {
     return <div className="text-center p-4">Cargando...</div>;
   }
@@ -131,6 +150,14 @@ export default function LastAccessesTable() {
       <div className="card-header d-flex justify-content-between align-items-center">
         <h5 className="mb-0">Últimos Accesos</h5>
         <div className="d-flex align-items-center gap-2">
+          <input
+            type="text"
+            className="form-control form-control-sm"
+            placeholder="Buscar por nombre, boleta o CURP..."
+            style={{ width: '280px' }}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
           <label className="mb-0 me-2">Mostrar:</label>
           <select
             className="form-select form-select-sm"
@@ -160,14 +187,14 @@ export default function LastAccessesTable() {
               </tr>
             </thead>
             <tbody>
-              {accesses.length === 0 ? (
+              {filteredAccesses.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="text-center text-muted">
-                    No hay registros
+                    {searchQuery.trim() ? 'No se encontraron resultados' : 'No hay registros'}
                   </td>
                 </tr>
               ) : (
-                accesses.map((access) => {
+                filteredAccesses.map((access) => {
                   const userName =
                     access.user?.name || access.guest?.name || 'Desconocido';
                   const userBoleta = access.user?.boleta || '';
@@ -276,7 +303,8 @@ export default function LastAccessesTable() {
         {pagination.totalPages > 1 && (
           <nav className="d-flex justify-content-between align-items-center mt-3">
             <div className="text-muted small">
-              Mostrando {accesses.length} de {pagination.total} registros
+              Mostrando {filteredAccesses.length} de {pagination.total} registros
+              {searchQuery.trim() && ` (filtrados)`}
             </div>
             <ul className="pagination pagination-sm mb-0">
               <li
