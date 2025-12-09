@@ -8,11 +8,13 @@ const CLEANUP_DAYS = 7; // días después de los cuales limpiamos registros viej
 /**
  * Pasa todos los usuarios INSIDE → OUTSIDE
  * y registra un log AUTO_RESET.
+ * También auto-expulsa invitados INSIDE → OUTSIDE_AUTO.
  */
 async function resetInsideUsers() {
   const now = new Date();
   console.log(`[AUTO-RESET] Ejecutando a las ${now.toISOString()}`);
 
+  // Reset usuarios institucionales
   const insideUsers = await prisma.user.findMany({
     where: { accessState: 'INSIDE' },
     select: {
@@ -32,29 +34,56 @@ async function resetInsideUsers() {
     },
   });
 
-  if (!insideUsers.length) {
+  if (insideUsers.length) {
+    const ids = insideUsers.map((u) => u.id);
+
+    await prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data: { accessState: 'OUTSIDE' },
+    });
+
+    await prisma.accessLog.createMany({
+      data: ids.map((id) => ({
+        userId: id,
+        action: 'VALIDATE_ALLOW', // reutilizado
+        kind: 'EXIT',
+      })),
+      skipDuplicates: true,
+    });
+
+    console.log(`[AUTO-RESET] Usuarios reseteados: ${ids.length}`);
+  } else {
     console.log('[AUTO-RESET] No hay usuarios INSIDE.');
-    return;
   }
 
-  const ids = insideUsers.map((u) => u.id);
-
-  await prisma.user.updateMany({
-    where: { id: { in: ids } },
-    data: { accessState: 'OUTSIDE' },
+  // Auto-expulsa invitados que siguen INSIDE (sin haber escaneado salida)
+  const insideGuests = await prisma.guestVisit.findMany({
+    where: { state: 'INSIDE' },
+    select: { id: true, firstName: true, curp: true },
   });
 
-  await prisma.accessLog.createMany({
-    data: ids.map((id) => ({
-      userId: id,
-      action: 'VALIDATE_ALLOW', // reutilizado
-      kind: 'EXIT',
-    })),
-    skipDuplicates: true,
-  });
+  if (insideGuests.length) {
+    const guestIds = insideGuests.map((g) => g.id);
 
-  // (omitimos AccessLog porque enum no soporta AUTO_RESET)
-  console.log(`[AUTO-RESET] Usuarios reseteados: ${ids.length}`);
+    await prisma.guestVisit.updateMany({
+      where: { id: { in: guestIds } },
+      data: {
+        state: 'OUTSIDE_AUTO',  // ← Auto-expelled without manual exit
+        expiredAtSystem: now,    // ← Audit trail timestamp
+      },
+    });
+
+    console.log(
+      `[AUTO-RESET] Invitados auto-expulsados (OUTSIDE_AUTO): ${guestIds.length}`
+    );
+    insideGuests.forEach((g) =>
+      console.log(
+        `  - ${g.firstName} (CURP: ${g.curp}) - No escaneó salida`
+      )
+    );
+  } else {
+    console.log('[AUTO-RESET] No hay invitados INSIDE.');
+  }
 }
 
 /**

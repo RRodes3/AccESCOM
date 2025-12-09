@@ -68,14 +68,13 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // 3) Buscar visita vigente. "Vigente" = estado OUTSIDE/INSIDE y/o no expirada
+    // 3) Buscar visita vigente SOLO si está INSIDE y no ha expirado
+    // NO reutilizar visitas en OUTSIDE o COMPLETED (invitado debe re-registrarse para nueva visita)
     const activeVisit = await prisma.guestVisit.findFirst({
       where: {
         curp,
-        OR: [
-          { state: { in: ['OUTSIDE', 'INSIDE'] } },
-          { expiresAt: { gt: now() } },
-        ],
+        state: 'INSIDE',  // ← SOLO INSIDE (ongoing visit)
+        expiresAt: { gt: now() },  // ← Y aún no expirada
       },
       include: {
         passes: {

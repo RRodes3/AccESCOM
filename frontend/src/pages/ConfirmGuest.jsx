@@ -23,6 +23,9 @@ export default function ConfirmGuest() {
     setSending(true);
     setMsg('');
     try {
+      // Limpiar sesión anterior (en caso de re-registro)
+      sessionStorage.removeItem('guestVisit');
+
       // Validación + guardado en BD (backend) y emisión de QR (1 uso c/u)
       const { data } = await api.post('/guest/register', {
         firstName: form.firstName.trim(),

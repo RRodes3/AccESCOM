@@ -359,17 +359,13 @@ export default function AccessReport() {
                 <td>{r.rol}</td>
                 <td>{r.subRol}</td>
                 <td>
-                  {r.curp !== '—' || r.reason !== '—' ? (
+                  {r.curp !== '—' && r.reason !== '—' ? (
                     <>
                       <div><b>CURP:</b> {r.curp}</div>
                       <div><b>Motivo:</b> {r.reason}</div>
                     </>
                   ) : (
-                    <>
-                      <div><b>Boleta:</b> {r.boleta}</div>
-                      <div><b>Email:</b> {r.email}</div>
-                      <div><b>Contacto:</b> {r.contactEmail}</div>
-                    </>
+                    <span className="text-muted">—</span>
                   )}
                 </td>
                 <td>{r.guard}</td>

@@ -42,6 +42,7 @@ enum GuestState {
   OUTSIDE
   INSIDE
   COMPLETED
+  OUTSIDE_AUTO  // Auto-expelled by system at 23:00 without manual exit scan
 }
 
 enum InstitutionalType {
@@ -94,6 +95,7 @@ model GuestVisit {
   state     GuestState @default(OUTSIDE)
   createdAt DateTime   @default(now())
   expiresAt DateTime?
+  expiredAtSystem DateTime?  // Timestamp when auto-expelled by system (for audit trail)
 
   passes QRPass[]
   logs   AccessLog[] @relation("AccessByGuest")

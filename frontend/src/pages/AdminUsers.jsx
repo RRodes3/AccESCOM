@@ -372,7 +372,7 @@ export default function AdminUsers() {
       <div className="alert alert-secondary small mt-3">
         <strong>Acciones sobre usuarios:</strong><br />
         <span className="badge bg-warning text-dark me-1">Desactivar</span> Deshabilita temporalmente (reversible).<br />
-        <span className="badge bg-info text-dark me-1">Anonimizar</span> Borra datos personales y deja un registro neutro (irreversible).<br />
+        <span className="badge bg-info text-dark me-1">Eliminar parcialmente</span> Borra datos personales y deja un registro neutro (irreversible).<br />
         <span className="badge bg-danger me-1">Eliminar definitivo</span> Borra el registro por completo (irreversible).
       </div>
 
@@ -386,7 +386,7 @@ export default function AdminUsers() {
           </div>
           <div className="d-flex gap-2">
             <button className="btn btn-sm btn-warning" onClick={() => { setBulkMode('soft'); setBulkConfirm(false); setBulkModalOpen(true); }}>Desactivar</button>
-            <button className="btn btn-sm btn-info text-white" onClick={() => { setBulkMode('anonymize'); setBulkConfirm(false); setBulkModalOpen(true); }}>Anonimizar</button>
+            <button className="btn btn-sm btn-info text-white" onClick={() => { setBulkMode('anonymize'); setBulkConfirm(false); setBulkModalOpen(true); }}>Eliminar parcialmente</button>
             <button className="btn btn-sm btn-danger" onClick={() => { setBulkMode('hard'); setBulkConfirm(false); setBulkModalOpen(true); }}>Eliminar definitivo</button>
           </div>
         </div>
@@ -687,11 +687,10 @@ export default function AdminUsers() {
                           onClick={() => setModalMode('anonymize')}
                         >
                           <div>
-                            <strong>Anonimizar</strong>
+                            <strong>Eliminar parcialmente (irreversible)</strong>
                             <br />
                             <small>Borra datos personales (incluye correos, nombre, boleta y foto).</small>
                           </div>
-                          <span className="badge bg-dark">Irreversible</span>
                         </button>
 
                         <button
@@ -699,11 +698,10 @@ export default function AdminUsers() {
                           onClick={() => setModalMode('hard')}
                         >
                           <div>
-                            <strong>Eliminar definitivo</strong>
+                            <strong>Eliminar definitivo (irreversible)</strong>
                             <br />
                             <small>Elimina el registro del usuario. Logs quedan sin referencia.</small>
                           </div>
-                          <span className="badge bg-dark">Irreversible</span>
                         </button>
                       </div>
                     </>
@@ -713,7 +711,7 @@ export default function AdminUsers() {
                         <div>
                           <strong>Has seleccionado:</strong>{' '}
                           {modalMode === 'soft' && <span className="badge bg-warning text-dark">Desactivar</span>}
-                          {modalMode === 'anonymize' && <span className="badge bg-info text-dark">Anonimizar</span>}
+                          {modalMode === 'anonymize' && <span className="badge bg-info text-dark">Eliminar parcialmente</span>}
                           {modalMode === 'hard' && <span className="badge bg-danger">Eliminar definitivo</span>}
                         </div>
                         <button
@@ -777,7 +775,7 @@ export default function AdminUsers() {
                       onClick={performAction}
                     >
                       {modalMode === 'soft' && 'Desactivar usuario'}
-                      {modalMode === 'anonymize' && 'Anonimizar usuario'}
+                      {modalMode === 'anonymize' && 'Eliminar datos del usuario'}
                       {modalMode === 'hard' && 'Eliminar definitivamente'}
                     </button>
                   )}
@@ -805,7 +803,7 @@ export default function AdminUsers() {
                 )}
                 {bulkMode === 'anonymize' && (
                   <div className="alert alert-info small">
-                    Anonimizará datos personales. Acción irreversible.
+                    Eliminará datos personales del usuario. Acción irreversible.
                   </div>
                 )}
                 {bulkMode === 'hard' && (
@@ -847,7 +845,7 @@ export default function AdminUsers() {
                   }}
                 >
                   {bulkMode === 'soft' && 'Desactivar seleccionados'}
-                  {bulkMode === 'anonymize' && 'Anonimizar seleccionados'}
+                  {bulkMode === 'anonymize' && 'Eliminar datos de seleccionados'}
                   {bulkMode === 'hard' && 'Eliminar definitivamente'}
                 </button>
               </div>

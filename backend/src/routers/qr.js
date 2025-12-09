@@ -758,7 +758,7 @@ router.post(
           data: { status: 'USED' },
         });
 
-        const newState = pass.kind === 'ENTRY' ? 'INSIDE' : 'COMPLETED';
+        const newState = pass.kind === 'ENTRY' ? 'INSIDE' : 'OUTSIDE';  // EXIT → OUTSIDE (manual exit)
         await prisma.guestVisit.update({
           where: { id: g.id },
           data: { state: newState },

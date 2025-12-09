@@ -255,7 +255,14 @@ export default function LastAccessesTable() {
                               : 'danger'
                           }`}
                         >
-                          {String(action).replace('VALIDATE_', '')}
+                          {(() => {
+                            const act = String(action).replace('VALIDATE_', '');
+                            if (act === 'ALLOWED') return 'Permitido';
+                            if (act === 'DENIED') return 'Denegado';
+                            if (act === 'EXPIRED_QR') return 'QR Expirado';
+                            if (act === 'INVALID_QR') return 'QR Inválido';
+                            return act;
+                          })()}
                         </span>
                       </td>
                     </tr>
