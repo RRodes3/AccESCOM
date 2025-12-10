@@ -164,4 +164,4 @@ function setupDailyResetJobs(options = {}) {
   }
 }
 
-module.exports = { setupDailyResetJobs, resetInsideUsers };
+module.exports = { setupDailyResetJobs };

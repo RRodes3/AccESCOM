@@ -7,8 +7,6 @@ export default function Dashboard() {
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [testingCron, setTestingCron] = useState(false);
-  const [cronResult, setCronResult] = useState(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -49,23 +47,6 @@ export default function Dashboard() {
 
   const fmtFecha = (iso) =>
     iso ? new Date(iso).toLocaleString() : '—';
-
-  // TEST: Ejecutar cronjob manualmente
-  const handleTestCronjob = async () => {
-    setTestingCron(true);
-    setCronResult(null);
-    try {
-      const { data } = await api.get('/admin/test-cronjob');
-      setCronResult({ ok: true, data });
-    } catch (err) {
-      setCronResult({ 
-        ok: false, 
-        error: err?.response?.data?.error || err.message 
-      });
-    } finally {
-      setTestingCron(false);
-    }
-  };
 
   return (
     <div className="container mt-3">
@@ -212,42 +193,6 @@ export default function Dashboard() {
                   })}
                 </tbody>
               </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ---------- BOTÓN DE PRUEBA DE CRONJOB ---------- */}
-      <div className="card shadow-sm mt-4 border-warning">
-        <div className="card-body">
-          <h5 className="card-title">🔧 Prueba de Cronjob (Desarrollo)</h5>
-          <p className="text-muted mb-3">
-            Ejecuta manualmente el reseteo diario de usuarios INSIDE → OUTSIDE y 
-            auto-expulsión de invitados para verificar que funciona correctamente.
-          </p>
-          <button 
-            className="btn btn-warning"
-            onClick={handleTestCronjob}
-            disabled={testingCron}
-          >
-            {testingCron ? 'Ejecutando...' : '▶️ Ejecutar Cronjob Ahora'}
-          </button>
-
-          {cronResult && (
-            <div className={`alert ${cronResult.ok ? 'alert-success' : 'alert-danger'} mt-3 mb-0`}>
-              {cronResult.ok ? (
-                <>
-                  <h6 className="alert-heading">✅ Cronjob ejecutado exitosamente</h6>
-                  <pre className="mb-0 small" style={{maxHeight: '200px', overflow: 'auto'}}>
-                    {JSON.stringify(cronResult.data, null, 2)}
-                  </pre>
-                </>
-              ) : (
-                <>
-                  <h6 className="alert-heading">❌ Error al ejecutar cronjob</h6>
-                  <p className="mb-0">{cronResult.error}</p>
-                </>
-              )}
             </div>
           )}
         </div>
