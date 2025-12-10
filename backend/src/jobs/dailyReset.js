@@ -57,32 +57,41 @@ async function resetInsideUsers() {
   }
 
   // Auto-expulsa invitados que siguen INSIDE (sin haber escaneado salida)
-  const insideGuests = await prisma.guestVisit.findMany({
-    where: { state: 'INSIDE' },
-    select: { id: true, firstName: true, curp: true },
-  });
-
-  if (insideGuests.length) {
-    const guestIds = insideGuests.map((g) => g.id);
-
-    await prisma.guestVisit.updateMany({
-      where: { id: { in: guestIds } },
-      data: {
-        state: 'OUTSIDE_AUTO',  // ← Auto-expelled without manual exit
-        expiredAtSystem: now,    // ← Audit trail timestamp
-      },
+  try {
+    const insideGuests = await prisma.guestVisit.findMany({
+      where: { state: 'INSIDE' },
+      select: { id: true, firstName: true, curp: true },
     });
 
-    console.log(
-      `[AUTO-RESET] Invitados auto-expulsados (OUTSIDE_AUTO): ${guestIds.length}`
-    );
-    insideGuests.forEach((g) =>
-      console.log(
-        `  - ${g.firstName} (CURP: ${g.curp}) - No escaneó salida`
-      )
-    );
-  } else {
-    console.log('[AUTO-RESET] No hay invitados INSIDE.');
+    if (insideGuests.length) {
+      const guestIds = insideGuests.map((g) => g.id);
+
+      try {
+        await prisma.guestVisit.updateMany({
+          where: { id: { in: guestIds } },
+          data: {
+            state: 'OUTSIDE_AUTO',  // ← Auto-expelled without manual exit
+            expiredAtSystem: now,    // ← Audit trail timestamp
+          },
+        });
+
+        console.log(
+          `[AUTO-RESET] Invitados auto-expulsados (OUTSIDE_AUTO): ${guestIds.length}`
+        );
+        insideGuests.forEach((g) =>
+          console.log(
+            `  - ${g.firstName} (CURP: ${g.curp}) - No escaneó salida`
+          )
+        );
+      } catch (updateErr) {
+        console.error('[AUTO-RESET] Error actualizando invitados a OUTSIDE_AUTO:', updateErr.message);
+        console.warn('[AUTO-RESET] OUTSIDE_AUTO state puede no existir en la BD. Ejecuta las migraciones pendientes.');
+      }
+    } else {
+      console.log('[AUTO-RESET] No hay invitados INSIDE.');
+    }
+  } catch (guestErr) {
+    console.error('[AUTO-RESET] Error consultando invitados INSIDE:', guestErr.message);
   }
 }
 

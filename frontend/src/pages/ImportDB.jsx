@@ -26,10 +26,10 @@ export default function ImportDB() {
     if (mode === "photos") return "/admin/import-photos";
     if (mode === "zip") return "/admin/import/zip";
     if (mode === "csv") {
-      if (tab === "users") return "/admin/users";
-      return "/admin/guests"; // placeholder si luego se implementa
+      if (tab === "users") return "/admin/import/users";
+      return "/admin/import/guests"; // placeholder si luego se implementa
     }
-    return "/admin/users";
+    return "/admin/import/users";
   }
 
   // Tipos aceptados
