@@ -663,4 +663,28 @@ router.patch('/users/:id', auth, requireRole(['ADMIN']), async (req, res) => {
   }
 });
 
+/**
+ * TEST: Ejecuta manualmente el cronjob dailyReset
+ * GET /api/admin/test-cronjob
+ * Solo disponible con rol ADMIN (para seguridad)
+ */
+router.get('/test-cronjob', auth, requireRole(['ADMIN']), async (req, res) => {
+  try {
+    const { resetInsideUsers } = require('../../src/jobs/dailyReset');
+    const result = await resetInsideUsers();
+    return res.json({ 
+      ok: true, 
+      message: 'Cronjob ejecutado exitosamente',
+      result 
+    });
+  } catch (err) {
+    console.error('❌ Error ejecutando cronjob:', err);
+    return res.status(500).json({ 
+      ok: false, 
+      error: 'Error al ejecutar cronjob',
+      details: err.message 
+    });
+  }
+});
+
 module.exports = router;
